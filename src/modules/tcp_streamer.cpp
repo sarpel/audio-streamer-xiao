@@ -11,6 +11,10 @@ static int sock = -1;
 static uint64_t total_bytes_sent = 0;
 static uint32_t reconnect_count = 0;
 
+// ✅ ADD: Global packing buffer (allocated once at init)
+static uint8_t* packing_buffer = NULL;
+static size_t packing_buffer_size = 0;
+
 static bool tcp_connect(void) {
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
@@ -58,6 +62,17 @@ static bool tcp_connect(void) {
 }
 
 bool tcp_streamer_init(void) {
+    // ✅ MOVE: Allocate packing buffer FIRST (before connection attempts)
+    packing_buffer_size = 16384 * 2;  // Max samples × bytes per sample
+    packing_buffer = (uint8_t*)malloc(packing_buffer_size);
+    
+    if (packing_buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate packing buffer");
+        return false;
+    }
+    
+    ESP_LOGI(TAG, "Packing buffer allocated: %zu bytes", packing_buffer_size);
+
     // Attempt connection with retries
     int max_retries = 5;
     int retry_delay_ms = 2000;
@@ -73,6 +88,13 @@ bool tcp_streamer_init(void) {
     }
 
     ESP_LOGE(TAG, "Failed to connect after %d attempts", max_retries);
+    
+    // ✅ ADD: Free buffer if connection failed
+    if (packing_buffer != NULL) {
+        free(packing_buffer);
+        packing_buffer = NULL;
+    }
+    
     return false;
 }
 
@@ -98,68 +120,42 @@ bool tcp_streamer_send_audio(const int32_t* samples, size_t sample_count) {
         return false;
     }
 
-    // Pack samples according to configured bit depth
     size_t packed_size = sample_count * BYTES_PER_SAMPLE;
-    uint8_t* packed_data = (uint8_t*)malloc(packed_size);
-    if (packed_data == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate packing buffer");
+    
+    // ✅ Check size fits in pre-allocated buffer
+    if (packed_size > packing_buffer_size) {
+        ESP_LOGE(TAG, "Data too large for packing buffer");
         return false;
     }
 
-    // Convert int32_t samples to packed format based on bit depth
-    if (BITS_PER_SAMPLE == 16) {
-        // 16-bit: Take lower 16 bits from int32_t samples
-        for (size_t i = 0; i < sample_count; i++) {
-            int16_t sample16 = (int16_t)(samples[i] & 0xFFFF);
-
-            #if DEBUG_ENABLED
-            // Validate sample range in debug mode
-            if (samples[i] < -32768 || samples[i] > 32767) {
-                ESP_LOGW(TAG, "Sample %d out of 16-bit range: %d", i, samples[i]);
-            }
-            #endif
-
-            packed_data[i * 2 + 0] = sample16 & 0xFF;        // LSB
-            packed_data[i * 2 + 1] = (sample16 >> 8) & 0xFF; // MSB
-        }
-    } else if (BITS_PER_SAMPLE == 24) {
-        // 24-bit: Take most significant 24 bits from int32_t samples
-        for (size_t i = 0; i < sample_count; i++) {
-            int32_t sample = samples[i];
-
-            #if DEBUG_ENABLED
-            // Validate sample range in debug mode
-            if (sample < -8388608 || sample > 8388607) {
-                ESP_LOGW(TAG, "Sample %d out of 24-bit range: %d", i, sample);
-            }
-            #endif
-
-            packed_data[i * 3 + 0] = (sample >> 8) & 0xFF;   // LSB
-            packed_data[i * 3 + 1] = (sample >> 16) & 0xFF;  // Middle byte
-            packed_data[i * 3 + 2] = (sample >> 24) & 0xFF;  // MSB
-        }
-    } else {
-        // Unsupported bit depth
-        ESP_LOGE(TAG, "Unsupported bit depth: %d", BITS_PER_SAMPLE);
-        free(packed_data);
-        return false;
+    // Pack 32-bit samples to 16-bit
+    for (size_t i = 0; i < sample_count; i++) {
+        int16_t sample_16 = (int16_t)(samples[i] >> 16);
+        packing_buffer[i * 2] = sample_16 & 0xFF;
+        packing_buffer[i * 2 + 1] = (sample_16 >> 8) & 0xFF;
     }
 
     // Send packed data
     size_t total_sent = 0;
     while (total_sent < packed_size) {
-        ssize_t sent = send(sock, packed_data + total_sent, packed_size - total_sent, 0);
+        ssize_t sent = send(sock, packing_buffer + total_sent, packed_size - total_sent, 0);
+        
         if (sent < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+                continue;
+            }
             ESP_LOGE(TAG, "Send failed: errno %d", errno);
-            free(packed_data);
+            return false;
+        } else if (sent == 0) {
+            ESP_LOGW(TAG, "Connection closed");
             return false;
         }
+        
         total_sent += sent;
     }
 
     total_bytes_sent += packed_size;
-    free(packed_data);
-
     return true;
 }
 
@@ -181,6 +177,20 @@ void tcp_streamer_close(void) {
         close(sock);
         sock = -1;
         ESP_LOGI(TAG, "Connection closed");
+    }
+}
+
+// ✅ ADD: New deinit function to cleanup resources
+void tcp_streamer_deinit(void) {
+    // Close connection
+    tcp_streamer_close();
+    
+    // Free packing buffer
+    if (packing_buffer != NULL) {
+        free(packing_buffer);
+        packing_buffer = NULL;
+        packing_buffer_size = 0;
+        ESP_LOGI(TAG, "Packing buffer freed");
     }
 }
 

@@ -14,6 +14,9 @@ static const char* TAG = "NETWORK_MANAGER";
 static bool wifi_connected = false;
 static bool ntp_synced = false;
 
+static uint32_t wifi_disconnect_count = 0;  // ✅ Add counter
+static const uint32_t MAX_DISCONNECT_BEFORE_REBOOT = 20;
+
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -21,12 +24,24 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "WiFi started, connecting...");
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_connected = false;
-        ESP_LOGW(TAG, "WiFi disconnected, attempting reconnect...");
+        wifi_disconnect_count++;  // ✅ Track disconnects
+        
+        ESP_LOGW(TAG, "WiFi disconnected (count: %lu), attempting reconnect...", 
+                 wifi_disconnect_count);
+        
+        // ✅ Add emergency reboot for persistent WiFi issues
+        if (wifi_disconnect_count > MAX_DISCONNECT_BEFORE_REBOOT) {
+            ESP_LOGE(TAG, "Too many WiFi disconnects, rebooting...");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_restart();
+        }
+        
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         wifi_connected = true;
+        wifi_disconnect_count = 0;  // ✅ Reset on successful connection
     }
 }
 
@@ -36,8 +51,22 @@ bool network_manager_init(void) {
     // Initialize NVS (required for WiFi)
     ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "NVS needs erase, erasing...");
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
+        
+        // ✅ Check if second attempt also failed
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "CRITICAL: NVS init failed twice: %s", esp_err_to_name(ret));
+            // Try one more time with factory reset
+            nvs_flash_erase();
+            ret = nvs_flash_init();
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "CRITICAL: NVS permanently corrupted, rebooting...");
+                vTaskDelay(pdMS_TO_TICKS(5000));
+                esp_restart();
+            }
+        }
     }
     ESP_ERROR_CHECK(ret);
 
@@ -166,6 +195,15 @@ bool network_manager_init_ntp(void) {
 
     if (!ntp_synced) {
         ESP_LOGW(TAG, "NTP sync timeout, continuing anyway");
+        
+        // ✅ Add fallback: Set a default time or retry later
+        struct timeval tv = {
+            .tv_sec = 1704067200,  // Jan 1, 2024 00:00:00 UTC
+            .tv_usec = 0
+        };
+        settimeofday(&tv, NULL);
+        ESP_LOGW(TAG, "Using fallback time: 2024-01-01");
+        
         return false;
     }
 

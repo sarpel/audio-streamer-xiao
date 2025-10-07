@@ -20,22 +20,21 @@ bool buffer_manager_init(size_t size_bytes) {
     // Calculate size in samples (4 bytes per int32_t sample)
     buffer_size_samples = size_bytes / sizeof(int32_t);
 
-    ESP_LOGI(TAG, "Allocating %d KB ring buffer in PSRAM (%d samples)",
+    ESP_LOGI(TAG, "Initializing %d KB ring buffer (%d samples)",
              size_bytes / 1024, buffer_size_samples);
 
-    // Allocate buffer in PSRAM for large capacity
+    // Try to allocate buffer in PSRAM first (if available)
     ring_buffer = (int32_t*)heap_caps_malloc(size_bytes, MALLOC_CAP_SPIRAM);
     if (ring_buffer == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate ring buffer in PSRAM");
-        // Try regular heap as fallback
+        // PSRAM not available, use internal SRAM
         ring_buffer = (int32_t*)malloc(size_bytes);
         if (ring_buffer == NULL) {
-            ESP_LOGE(TAG, "Failed to allocate ring buffer in regular heap");
+            ESP_LOGE(TAG, "Failed to allocate ring buffer");
             return false;
         }
-        ESP_LOGW(TAG, "Ring buffer allocated in regular heap (not PSRAM)");
+        ESP_LOGI(TAG, "Ring buffer allocated in internal SRAM");
     } else {
-        ESP_LOGI(TAG, "Ring buffer allocated successfully in PSRAM");
+        ESP_LOGI(TAG, "Ring buffer allocated in PSRAM");
     }
 
     // Create mutex for thread-safe access
@@ -62,7 +61,11 @@ size_t buffer_manager_write(const int32_t* data, size_t samples) {
         return 0;
     }
 
-    xSemaphoreTake(buffer_mutex, portMAX_DELAY);
+    // ✅ Add timeout instead of blocking forever
+    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+        ESP_LOGE(TAG, "CRITICAL: Mutex timeout in write");
+        return 0;  // Or trigger recovery
+    }
 
     size_t free_space = buffer_size_samples - available_samples;
     size_t samples_to_write = samples;

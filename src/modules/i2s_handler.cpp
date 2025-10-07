@@ -107,6 +107,13 @@ bool i2s_handler_read(int32_t* buffer, size_t samples_to_read, size_t* bytes_rea
         underflow_count++;
         ESP_LOGW(TAG, "I2S underflow detected (requested: %zu, got: %zu)",
                  bytes_to_read, *bytes_read);
+        
+        // ✅ Add recovery for persistent underflows
+        if (underflow_count > 100) {
+            ESP_LOGE(TAG, "Too many I2S underflows (%lu), may need reinit", underflow_count);
+            // Signal main.cpp to reinitialize I2S
+            return false;  // Trigger failure handling in i2s_reader_task
+        }
     }
 
     return true;
