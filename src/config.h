@@ -7,10 +7,10 @@
 //   export WIFI_PASSWORD="your_password"
 // If not set, defaults will be used (change in code before deployment)
 #ifndef WIFI_SSID
-#define WIFI_SSID "YOUR_WIFI_SSID"
+#define WIFI_SSID "Sarpel_2G"
 #endif
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+#define WIFI_PASSWORD "penguen1988"
 #endif
 
 // Static IP Configuration (optional, set to 0,0,0,0 for DHCP)
@@ -47,7 +47,7 @@
 // Buffer Configuration
 #define I2S_DMA_BUF_COUNT 8
 #define I2S_DMA_BUF_LEN 512  // 512 samples per DMA buffer (1024 for better resilience)
-#define RING_BUFFER_SIZE (1024 * 1024)  // 1 MB in PSRAM
+#define RING_BUFFER_SIZE (128 * 1024)  // 128 KB in internal SRAM (ESP32-S3 has 512KB total)
 
 // Task Configuration
 #define I2S_READER_STACK_SIZE 4096
