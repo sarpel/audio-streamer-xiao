@@ -10,6 +10,8 @@
 #include "modules/network_manager.h"
 #include "modules/tcp_streamer.h"
 #include "modules/buffer_manager.h"
+#include "modules/config_manager.h"
+#include "modules/web_server.h"
 
 static const char* TAG = "MAIN";
 
@@ -318,6 +320,25 @@ extern "C" void app_main(void) {
     // ✅ Subscribe app_main to watchdog
     esp_task_wdt_add(xTaskGetCurrentTaskHandle());
 
+    // Initialize configuration manager
+    ESP_LOGI(TAG, "Initializing configuration manager...");
+    if (!config_manager_init()) {
+        ESP_LOGE(TAG, "CRITICAL: Config manager init failed, rebooting...");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
+
+    // Load configuration from NVS (or defaults on first boot)
+    if (!config_manager_load()) {
+        ESP_LOGE(TAG, "CRITICAL: Failed to load configuration, rebooting...");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
+
+    if (config_manager_is_first_boot()) {
+        ESP_LOGI(TAG, "First boot detected - using default configuration");
+        config_manager_save(); // Save defaults to NVS
+    }
 
     // ✅ REMOVE: Don't manually configure watchdog
     // The system will handle it automatically
@@ -337,8 +358,19 @@ extern "C" void app_main(void) {
     ESP_LOGI("MAIN", "Largest free block: %lu bytes", 
              heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 
+    ESP_LOGI(TAG, "Initializing mDNS...");
+    network_manager_init_mdns(); // Non-critical, continue if fails
+
     ESP_LOGI(TAG, "Initializing NTP...");
     network_manager_init_ntp();
+
+    // Initialize web server
+    ESP_LOGI(TAG, "Initializing web server...");
+    if (!web_server_init()) {
+        ESP_LOGW(TAG, "Web server init failed, continuing without web UI");
+    } else {
+        ESP_LOGI(TAG, "Web UI available at http://audiostreamer.local or device IP");
+    }
 
     ESP_LOGI(TAG, "Initializing ring buffer...");
     if (!buffer_manager_init(RING_BUFFER_SIZE)) {

@@ -4,6 +4,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_sntp.h"
+// #include "mdns.h"  // TODO: Add mDNS support when available
 #include "nvs_flash.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
@@ -245,8 +246,54 @@ time_t network_manager_get_time(void) {
     return now;
 }
 
+bool network_manager_init_mdns(void) {
+    ESP_LOGI(TAG, "mDNS initialization skipped (not available in this build)");
+    ESP_LOGI(TAG, "Access web UI via device IP address");
+    return true;
+    
+    /* TODO: Enable when mDNS component is available
+    ESP_LOGI(TAG, "Initializing mDNS");
+    
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS init failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    err = mdns_hostname_set("audiostreamer");
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS hostname set failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    err = mdns_instance_name_set("ESP32-S3 Audio Streamer");
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS instance name set failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    // Add HTTP service
+    err = mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "mDNS service add failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    // Add custom audio streaming service
+    err = mdns_service_add(NULL, "_audiostream", "_tcp", 9000, NULL, 0);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "mDNS audio service add failed: %s", esp_err_to_name(err));
+        // Not critical, continue
+    }
+
+    ESP_LOGI(TAG, "mDNS initialized - accessible at http://audiostreamer.local");
+    return true;
+    */
+}
+
 void network_manager_deinit(void) {
     esp_sntp_stop();
+    // mdns_free();  // TODO: Enable when mDNS is available
     esp_wifi_stop();
     esp_wifi_deinit();
     ESP_LOGI(TAG, "Network manager deinitialized");

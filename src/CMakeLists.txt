@@ -4,6 +4,8 @@ idf_component_register(
          "modules/network_manager.cpp"
          "modules/tcp_streamer.cpp"
          "modules/buffer_manager.cpp"
+         "modules/config_manager.cpp"
+         "modules/web_server.cpp"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         driver
@@ -17,4 +19,6 @@ idf_component_register(
         lwip
         esp_hw_support
         freertos
+        esp_http_server
+        json
 )

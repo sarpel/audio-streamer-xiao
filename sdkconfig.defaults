@@ -1,0 +1,2 @@
+# Disable component manager to avoid pydantic issues
+CONFIG_IDF_COMPONENT_MANAGER=n

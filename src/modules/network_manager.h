@@ -52,6 +52,14 @@ bool network_manager_resync_ntp(void);
 time_t network_manager_get_time(void);
 
 /**
+ * Initialize mDNS service
+ * Allows discovery at audiostreamer.local
+ * 
+ * @return true on success, false on failure
+ */
+bool network_manager_init_mdns(void);
+
+/**
  * Deinitialize network manager
  */
 void network_manager_deinit(void);
