@@ -133,7 +133,7 @@ bool network_manager_init(void) {
 
     // Wait for connection (timeout 10 seconds)
     int retry_count = 0;
-    while (!wifi_connected && retry_count < 20) {
+    while (!wifi_connected && retry_count < WIFI_CONNECT_MAX_RETRIES) {
         vTaskDelay(pdMS_TO_TICKS(500));
         retry_count++;
     }
@@ -189,7 +189,7 @@ bool network_manager_init_ntp(void) {
 
     // Wait for time sync (timeout 10 seconds)
     int retry_count = 0;
-    while (!ntp_synced && retry_count < 20) {
+    while (!ntp_synced && retry_count < WIFI_CONNECT_MAX_RETRIES) {
         vTaskDelay(pdMS_TO_TICKS(500));
         retry_count++;
     }
@@ -251,44 +251,8 @@ bool network_manager_init_mdns(void) {
     ESP_LOGI(TAG, "Access web UI via device IP address");
     return true;
     
-    /* TODO: Enable when mDNS component is available
-    ESP_LOGI(TAG, "Initializing mDNS");
-    
-    esp_err_t err = mdns_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "mDNS init failed: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    err = mdns_hostname_set("audiostreamer");
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "mDNS hostname set failed: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    err = mdns_instance_name_set("ESP32-S3 Audio Streamer");
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "mDNS instance name set failed: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    // Add HTTP service
-    err = mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "mDNS service add failed: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    // Add custom audio streaming service
-    err = mdns_service_add(NULL, "_audiostream", "_tcp", 9000, NULL, 0);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "mDNS audio service add failed: %s", esp_err_to_name(err));
-        // Not critical, continue
-    }
-
-    ESP_LOGI(TAG, "mDNS initialized - accessible at http://audiostreamer.local");
-    return true;
-    */
+    // mDNS is not implemented in this version
+    // For mDNS support, see mdns_support.md in documentation
 }
 
 void network_manager_deinit(void) {

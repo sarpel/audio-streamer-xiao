@@ -8,6 +8,7 @@
 #include "lwip/dns.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
+#include "lwip/sockets.h"
 #include <string.h>
 
 static const char* TAG = "CAPTIVE_PORTAL";

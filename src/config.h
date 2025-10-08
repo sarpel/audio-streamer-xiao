@@ -9,8 +9,8 @@
 #endif
 
 // Web Authentication Configuration
-#define WEB_AUTH_USERNAME "admin"
-#define WEB_AUTH_PASSWORD "penguen1988"
+#define WEB_AUTH_USERNAME "sarpel"
+#define WEB_AUTH_PASSWORD "13524678"
 
 // Captive Portal Configuration
 #define CAPTIVE_PORTAL_SSID "AudioStreamer-Setup"
@@ -79,6 +79,11 @@
 #define MAX_I2S_FAILURES 100             // Max consecutive I2S failures before reinit
 #define MAX_BUFFER_OVERFLOWS 20          // Max overflows before action
 #define OVERFLOW_COOLDOWN_MS 5000        // Wait after overflow detected
+
+// Thresholds for error detection (moved from hardcoded values)
+#define I2S_UNDERFLOW_THRESHOLD 100      // Max I2S underflows before action
+#define WIFI_CONNECT_MAX_RETRIES 20      // Max WiFi connection attempts
+#define TCP_CONNECT_MAX_RETRIES 5        // Max TCP connection attempts per cycle
 
 // Stack Monitoring
 #define ENABLE_STACK_MONITORING 1      // Monitor stack usage
