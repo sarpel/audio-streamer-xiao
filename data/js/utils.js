@@ -100,3 +100,86 @@ async function handleFormSubmit(formId, apiCall, successMessage) {
     }
   });
 }
+
+// ===== Authentication Helper Functions =====
+
+// Default credentials (should be changed on first login in production)
+const DEFAULT_USERNAME = "admin";
+const DEFAULT_PASSWORD = "penguen1988";
+
+function getStoredUsername() {
+  return localStorage.getItem("auth_username") || DEFAULT_USERNAME;
+}
+
+function getStoredPassword() {
+  return localStorage.getItem("auth_password") || DEFAULT_PASSWORD;
+}
+
+function storeCredentials(username, password) {
+  localStorage.setItem("auth_username", username);
+  localStorage.setItem("auth_password", password);
+}
+
+function clearCredentials() {
+  localStorage.removeItem("auth_username");
+  localStorage.removeItem("auth_password");
+}
+
+// Fetch with Basic Authentication
+async function fetchWithAuth(url, options = {}) {
+  const username = getStoredUsername();
+  const password = getStoredPassword();
+  const auth = btoa(`${username}:${password}`);
+
+  const defaultOptions = {
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json",
+    },
+  };
+
+  const mergedOptions = {
+    ...defaultOptions,
+    ...options,
+    headers: {
+      ...defaultOptions.headers,
+      ...(options.headers || {}),
+    },
+  };
+
+  try {
+    const response = await fetch(url, mergedOptions);
+
+    if (response.status === 401) {
+      // Authentication failed
+      showAlert("Authentication failed. Please check credentials.", "error");
+      // Optionally redirect to login page
+      throw new Error("Authentication failed");
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    // Check if response is JSON
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      return await response.json();
+    }
+
+    return response;
+  } catch (error) {
+    console.error("Fetch with auth failed:", error);
+    throw error;
+  }
+}
+
+// Check if authentication is required (optional - for future use)
+async function checkAuthRequired() {
+  try {
+    const response = await fetch("/api/system/info");
+    return response.status === 401;
+  } catch (error) {
+    return false;
+  }
+}

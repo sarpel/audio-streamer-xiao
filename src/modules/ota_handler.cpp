@@ -138,7 +138,6 @@ static esp_err_t ota_status_handler(httpd_req_t *req) {
 
 // POST /api/ota/rollback - Rollback to previous partition
 static esp_err_t ota_rollback_handler(httpd_req_t *req) {
-    const esp_partition_t *running = esp_ota_get_running_partition();
     const esp_partition_t *last_invalid = esp_ota_get_last_invalid_partition();
     
     if (last_invalid != NULL) {

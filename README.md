@@ -10,15 +10,26 @@ PlatformIO firmware for streaming I2S audio from INMP441 microphone over WiFi/TC
 
 ## Features
 
+### Core Audio
 - **I2S Audio Capture**: 16-bit @ 16 kHz from INMP441 microphone
 - **WiFi Streaming**: Persistent TCP connection with automatic reconnection
 - **Ring Buffer**: 96 KB in SRAM with overflow protection
+- **Dual-Core Architecture**: Optimized FreeRTOS task distribution across ESP32-S3 cores
+
+### Reliability & Monitoring
 - **Error Recovery**: Automatic I2S reinitialization and exponential backoff reconnection
 - **Watchdog Monitoring**: Task health monitoring with auto-restart capability
-- **NTP Time Sync**: Accurate timestamps with hourly resync
-- **Dual-Core Architecture**: Optimized FreeRTOS task distribution across ESP32-S3 cores
 - **Stack Monitoring**: Real-time stack usage tracking and low-memory warnings
+- **NTP Time Sync**: Accurate timestamps with hourly resync
 - **Robust TCP**: Pre-allocated packing buffers and connection resilience
+
+### Web Interface & Management
+- **Web UI**: Modern responsive interface for configuration and monitoring
+- **REST API**: 18+ endpoints for complete device control
+- **OTA Updates**: Wireless firmware updates via web interface
+- **Captive Portal**: First-time setup wizard (connects as WiFi AP)
+- **Basic Auth**: HTTP Basic Authentication for security
+- **Real-time Monitoring**: Live statistics with auto-refresh
 
 ## Quick Start
 
@@ -384,6 +395,138 @@ Thread-safe ring buffer for audio samples.
 - Mutex timeout prevents deadlocks
 - Overflow counter for diagnostics
 - Thread-safe reset operation
+
+## Web Interface
+
+### Accessing the Web UI
+
+1. Connect device to WiFi (configured in `src/config.h`)
+2. Note the IP address from serial monitor
+3. Open browser to `http://[DEVICE_IP]`
+4. Login with credentials (default: `admin` / `penguen1988`)
+
+### Available Pages
+
+- **Dashboard** (`/index.html`) - System status overview with real-time stats
+- **Configuration** (`/config.html`) - WiFi, TCP, Audio, Buffer, Task settings
+- **Monitor** (`/monitor.html`) - Real-time monitoring with auto-refresh
+- **OTA Update** (`/ota.html`) - Wireless firmware upload interface
+
+### REST API Endpoints
+
+All endpoints require HTTP Basic Authentication.
+
+#### Configuration
+- `GET/POST /api/config/wifi` - WiFi settings (SSID, password, static IP)
+- `GET/POST /api/config/tcp` - TCP server settings
+- `GET/POST /api/config/audio` - I2S/audio parameters
+- `GET/POST /api/config/buffer` - Buffer size configuration
+- `GET/POST /api/config/tasks` - Task priorities and core assignments
+- `GET/POST /api/config/error` - Error recovery thresholds
+- `GET /api/config/all` - Get all configuration as JSON
+
+#### System Control
+- `GET /api/system/status` - Uptime, memory, buffer usage, statistics
+- `GET /api/system/info` - Chip model, IDF version, MAC address
+- `POST /api/system/restart` - Restart device
+- `POST /api/system/factory-reset` - Reset to factory defaults
+- `POST /api/system/save` - Persist current config to NVS
+- `POST /api/system/load` - Reload config from NVS
+
+#### OTA Updates
+- `GET /api/ota/status` - OTA status and partition info
+- `POST /api/ota/upload` - Upload firmware binary (multipart/form-data)
+- `POST /api/ota/rollback` - Rollback to previous firmware
+
+### Example API Usage
+
+```bash
+# Get system status (requires authentication)
+curl -u admin:penguen1988 http://192.168.1.100/api/system/status
+
+# Update WiFi configuration
+curl -u admin:penguen1988 -X POST http://192.168.1.100/api/config/wifi \
+  -H "Content-Type: application/json" \
+  -d '{"ssid":"NewNetwork","password":"newpass123"}'
+
+# Upload OTA firmware
+curl -u admin:penguen1988 -X POST http://192.168.1.100/api/ota/upload \
+  --data-binary @build/firmware.bin
+```
+
+## Advanced Features
+
+### OTA (Over-The-Air) Updates
+
+Update firmware wirelessly without USB connection.
+
+**Via Web UI:**
+1. Build firmware: `pio run --environment xiao_esp32s3`
+2. Navigate to `http://[DEVICE_IP]/ota.html`
+3. Select `.pio/build/xiao_esp32s3/firmware.bin`
+4. Click "Upload Firmware"
+5. Wait for upload and automatic reboot
+
+**Via Command Line:**
+```bash
+curl -u admin:penguen1988 -X POST http://[DEVICE_IP]/api/ota/upload \
+  --data-binary @.pio/build/xiao_esp32s3/firmware.bin
+```
+
+**Rollback if Needed:**
+```bash
+curl -u admin:penguen1988 -X POST http://[DEVICE_IP]/api/ota/rollback
+```
+
+### Captive Portal (First-Time Setup)
+
+On first boot or after factory reset:
+
+1. Device creates WiFi AP: `AudioStreamer-Setup`
+2. Connect to this network from phone/computer
+3. Browser automatically opens configuration page at `192.168.4.1`
+4. Enter WiFi credentials and settings
+5. Device saves config and reboots
+6. Connects to configured WiFi network
+
+**Configuration:**
+```cpp
+// src/config.h
+#define CAPTIVE_PORTAL_SSID "AudioStreamer-Setup"
+#define CAPTIVE_PORTAL_TIMEOUT_SEC 300  // 5 minutes
+```
+
+**To trigger portal again:**
+```bash
+curl -u admin:penguen1988 -X POST http://[DEVICE_IP]/api/system/factory-reset
+```
+
+### Basic Authentication
+
+All web pages and API endpoints require HTTP Basic Authentication.
+
+**Default Credentials:**
+- Username: `admin`
+- Password: `penguen1988`
+
+**Change in config.h:**
+```cpp
+#define WEB_AUTH_USERNAME "admin"
+#define WEB_AUTH_PASSWORD "penguen1988"
+```
+
+**Or via API:**
+```bash
+curl -u admin:penguen1988 -X POST http://[DEVICE_IP]/api/config/auth \
+  -H "Content-Type: application/json" \
+  -d '{"username":"newuser","password":"newpass"}'
+```
+
+**Security Notes:**
+- ⚠️ Uses HTTP (not HTTPS) - credentials sent as base64
+- ✅ Use only on trusted local networks
+- ✅ Change default password immediately
+- ✅ Consider VPN for remote access
 
 ## Serial Monitor Output
 
@@ -812,6 +955,57 @@ pio run --target upload --environment supermini_esp32c3
 - 512KB PSRAM ring buffer
 - Basic watchdog monitoring
 - NTP time synchronization
+
+## Contributing
+
+### Development Workflow
+
+1. **Create feature branch**:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+2. **Make changes and commit**:
+   ```bash
+   git add .
+   git commit -m "feat: Add your feature description"
+   ```
+
+3. **Push to GitHub**:
+   ```bash
+   # Via HTTPS with token
+   git push origin feature/your-feature-name
+
+   # Or use GitHub Desktop / VS Code for easier authentication
+   ```
+
+4. **Create Pull Request** on GitHub
+
+### Commit Message Convention
+
+- `feat:` New feature
+- `fix:` Bug fix
+- `docs:` Documentation changes
+- `refactor:` Code refactoring
+- `test:` Adding tests
+- `chore:` Maintenance tasks
+
+### Building and Testing
+
+```bash
+# Clean build
+pio run --target clean
+
+# Build
+pio run --environment xiao_esp32s3
+
+# Upload and monitor
+pio run --target upload --environment xiao_esp32s3
+pio device monitor
+
+# Run tests
+pio test --environment xiao_esp32s3
+```
 
 ## License
 

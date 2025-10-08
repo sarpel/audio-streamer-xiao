@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>System Logs - Audio Streamer</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      .log-controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+      }
+
+      .log-filter {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+      }
+
+      .log-container {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 15px;
+        height: 600px;
+        overflow-y: auto;
+        font-family: "Courier New", monospace;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .log-entry {
+        margin-bottom: 5px;
+        padding: 3px 0;
+        border-bottom: 1px solid #222;
+      }
+
+      .log-timestamp {
+        color: #888;
+        margin-right: 10px;
+      }
+
+      .log-level {
+        font-weight: bold;
+        margin-right: 10px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 11px;
+      }
+
+      .log-level-ERROR {
+        background: #ff4444;
+        color: white;
+      }
+
+      .log-level-WARN {
+        background: #ffaa00;
+        color: white;
+      }
+
+      .log-level-INFO {
+        background: #4488ff;
+        color: white;
+      }
+
+      .log-level-DEBUG {
+        background: #888888;
+        color: white;
+      }
+
+      .log-tag {
+        color: #00ff88;
+        margin-right: 10px;
+        font-weight: bold;
+      }
+
+      .log-message {
+        color: #ddd;
+      }
+
+      .log-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+
+      .log-stat {
+        background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+        padding: 10px;
+        border-radius: 5px;
+        text-align: center;
+      }
+
+      .log-stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 5px;
+      }
+
+      .log-stat-label {
+        color: #888;
+        font-size: 12px;
+      }
+
+      .filter-checkbox {
+        margin-right: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>📜 System Logs</h1>
+        <p>Real-time Device Logging</p>
+      </header>
+
+      <nav class="nav-tabs">
+        <a href="/">Dashboard</a>
+        <a href="/config.html">Configuration</a>
+        <a href="/monitor.html">Monitoring</a>
+        <a href="/logs.html" class="active">Logs</a>
+        <a href="/network.html">Network</a>
+        <a href="/ota.html">OTA Update</a>
+      </nav>
+
+      <main>
+        <!-- Log Statistics -->
+        <section class="card">
+          <h2>📊 Log Statistics</h2>
+          <div class="log-stats">
+            <div class="log-stat">
+              <div class="log-stat-value" id="stat-total">0</div>
+              <div class="log-stat-label">Total Logs</div>
+            </div>
+            <div class="log-stat">
+              <div class="log-stat-value" style="color: #ff4444" id="stat-errors">
+                0
+              </div>
+              <div class="log-stat-label">Errors</div>
+            </div>
+            <div class="log-stat">
+              <div class="log-stat-value" style="color: #ffaa00" id="stat-warnings">
+                0
+              </div>
+              <div class="log-stat-label">Warnings</div>
+            </div>
+            <div class="log-stat">
+              <div class="log-stat-value" style="color: #4488ff" id="stat-info">
+                0
+              </div>
+              <div class="log-stat-label">Info</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Log Controls -->
+        <section class="card">
+          <h2>🎛️ Log Controls</h2>
+          <div class="log-controls">
+            <!-- Auto-refresh -->
+            <div class="log-filter">
+              <label>
+                <input type="checkbox" id="auto-refresh" checked />
+                Auto-Refresh
+              </label>
+            </div>
+
+            <!-- Log Level Filters -->
+            <div class="log-filter">
+              <span>Show:</span>
+              <label class="filter-checkbox">
+                <input type="checkbox" class="level-filter" data-level="ERROR" checked />
+                ERROR
+              </label>
+              <label class="filter-checkbox">
+                <input type="checkbox" class="level-filter" data-level="WARN" checked />
+                WARN
+              </label>
+              <label class="filter-checkbox">
+                <input type="checkbox" class="level-filter" data-level="INFO" checked />
+                INFO
+              </label>
+              <label class="filter-checkbox">
+                <input type="checkbox" class="level-filter" data-level="DEBUG" checked />
+                DEBUG
+              </label>
+            </div>
+
+            <!-- Actions -->
+            <button id="clear-logs" class="btn btn-warning">Clear Logs</button>
+            <button id="download-logs" class="btn btn-primary">
+              Download Logs
+            </button>
+            <button id="refresh-logs" class="btn btn-primary">
+              Refresh Now
+            </button>
+          </div>
+
+          <!-- Search Filter -->
+          <div class="form-group" style="margin-top: 10px">
+            <input
+              type="text"
+              id="log-search"
+              placeholder="Search logs..."
+              style="width: 100%"
+            />
+          </div>
+        </section>
+
+        <!-- Log Viewer -->
+        <section class="card">
+          <h2>📋 Log Entries</h2>
+          <div id="log-container" class="log-container">
+            <div style="color: #888; text-align: center; margin-top: 100px">
+              Loading logs...
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p>
+          &copy; 2024 Audio Streamer |
+          <a href="https://github.com/sarpel/audio-streamer-xiao">GitHub</a>
+        </p>
+      </footer>
+    </div>
+
+    <script src="/js/utils.js"></script>
+    <script src="/js/logs.js"></script>
+  </body>
+</html>
