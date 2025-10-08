@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OTA Update - Audio Streamer</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🔄 OTA Firmware Update</h1>
+        <p>Over-The-Air Firmware Update</p>
+      </header>
+
+      <nav class="nav-tabs">
+        <a href="/">Dashboard</a>
+        <a href="/config.html">Configuration</a>
+        <a href="/monitor.html">Monitoring</a>
+        <a href="/ota.html" class="active">OTA Update</a>
+      </nav>
+
+      <main>
+        <section class="card">
+          <h2>📦 Upload Firmware</h2>
+          <div class="form-group">
+            <label for="firmwareFile">Select Firmware File (.bin)</label>
+            <input type="file" id="firmwareFile" accept=".bin" />
+          </div>
+
+          <div
+            id="uploadProgress"
+            class="progress-container"
+            style="display: none"
+          >
+            <div class="progress-bar">
+              <div id="progressBar" class="progress-fill"></div>
+            </div>
+            <p id="progressText">Uploading... 0%</p>
+          </div>
+
+          <button id="uploadBtn" class="btn btn-primary">
+            Upload Firmware
+          </button>
+
+          <div id="uploadStatus" class="alert" style="display: none"></div>
+        </section>
+
+        <section class="card">
+          <h2>ℹ️ Current Firmware Info</h2>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Running Partition:</span>
+              <span id="runningPartition" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Boot Partition:</span>
+              <span id="bootPartition" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">OTA Status:</span>
+              <span id="otaStatus" class="value">-</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>⚠️ Rollback</h2>
+          <p>
+            If the new firmware doesn't work, you can rollback to the previous
+            version.
+          </p>
+          <button id="rollbackBtn" class="btn btn-warning">
+            Rollback to Previous Firmware
+          </button>
+        </section>
+
+        <section class="card">
+          <h2>📋 Instructions</h2>
+          <ol>
+            <li>Build your firmware using <code>idf.py build</code></li>
+            <li>
+              The firmware file is located at
+              <code>build/audio-streamer-xiao.bin</code>
+            </li>
+            <li>Select the .bin file using the file picker above</li>
+            <li>Click "Upload Firmware" and wait for the update to complete</li>
+            <li>
+              The device will automatically reboot after successful update
+            </li>
+            <li>If something goes wrong, use the Rollback feature</li>
+          </ol>
+
+          <div class="alert alert-warning">
+            <strong>⚠️ Warning:</strong> Do not disconnect power during OTA
+            update! This could brick your device.
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p>
+          &copy; 2024 Audio Streamer |
+          <a href="https://github.com/sarpel/audio-streamer-xiao">GitHub</a>
+        </p>
+      </footer>
+    </div>
+
+    <script src="/js/utils.js"></script>
+    <script src="/js/ota.js"></script>
+  </body>
+</html>

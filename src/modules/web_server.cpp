@@ -4,17 +4,73 @@
 #include "tcp_streamer.h"
 #include "buffer_manager.h"
 #include "i2s_handler.h"
+#include "ota_handler.h"
 #include "../config.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
 #include "esp_timer.h"
 #include "esp_mac.h"
+#include "mbedtls/base64.h"
 #include "cJSON.h"
 #include <string.h>
 
 static const char* TAG = "WEB_SERVER";
 static httpd_handle_t server = NULL;
+
+// Basic Authentication Helper
+static bool check_basic_auth(httpd_req_t *req) {
+    auth_config_data_t auth;
+    if (!config_manager_get_auth(&auth)) {
+        ESP_LOGE(TAG, "Failed to get auth config");
+        return false;
+    }
+    
+    // Get Authorization header
+    char auth_header[256];
+    if (httpd_req_get_hdr_value_str(req, "Authorization", auth_header, sizeof(auth_header)) != ESP_OK) {
+        return false;
+    }
+    
+    // Check for "Basic " prefix
+    if (strncmp(auth_header, "Basic ", 6) != 0) {
+        return false;
+    }
+    
+    // Decode base64
+    unsigned char decoded[128];
+    size_t decoded_len;
+    if (mbedtls_base64_decode(decoded, sizeof(decoded), &decoded_len, 
+                              (const unsigned char*)(auth_header + 6), 
+                              strlen(auth_header + 6)) != 0) {
+        return false;
+    }
+    decoded[decoded_len] = '\0';
+    
+    // Split username:password
+    char *colon = strchr((char*)decoded, ':');
+    if (!colon) {
+        return false;
+    }
+    *colon = '\0';
+    char *username = (char*)decoded;
+    char *password = colon + 1;
+    
+    // Validate credentials
+    if (strcmp(username, auth.username) == 0 && strcmp(password, auth.password) == 0) {
+        return true;
+    }
+    
+    return false;
+}
+
+// Send 401 Unauthorized response
+static esp_err_t send_auth_required(httpd_req_t *req) {
+    httpd_resp_set_status(req, "401 Unauthorized");
+    httpd_resp_set_hdr(req, "WWW-Authenticate", "Basic realm=\"Audio Streamer\"");
+    httpd_resp_sendstr(req, "Authentication required");
+    return ESP_OK;
+}
 
 // Helper to send 400 Bad Request (if not defined)
 #ifndef httpd_resp_send_400
@@ -43,6 +99,11 @@ static esp_err_t send_json_response(httpd_req_t *req, cJSON *json, int status_co
 
 // GET /api/config/wifi - Get WiFi configuration
 static esp_err_t api_get_wifi_handler(httpd_req_t *req) {
+    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
     wifi_config_data_t wifi;
     if (!config_manager_get_wifi(&wifi)) {
         httpd_resp_send_500(req);
@@ -66,6 +127,11 @@ static esp_err_t api_get_wifi_handler(httpd_req_t *req) {
 
 // POST /api/config/wifi - Update WiFi configuration
 static esp_err_t api_post_wifi_handler(httpd_req_t *req) {
+    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
     char buf[512];
     int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (ret <= 0) {
@@ -141,6 +207,11 @@ static esp_err_t api_post_wifi_handler(httpd_req_t *req) {
 
 // GET /api/config/tcp - Get TCP configuration
 static esp_err_t api_get_tcp_handler(httpd_req_t *req) {
+    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
     tcp_config_data_t tcp;
     if (!config_manager_get_tcp(&tcp)) {
         httpd_resp_send_500(req);
@@ -158,6 +229,11 @@ static esp_err_t api_get_tcp_handler(httpd_req_t *req) {
 
 // POST /api/config/tcp - Update TCP configuration
 static esp_err_t api_post_tcp_handler(httpd_req_t *req) {
+    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
     char buf[256];
     int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (ret <= 0) {
@@ -201,6 +277,11 @@ static esp_err_t api_post_tcp_handler(httpd_req_t *req) {
 
 // GET /api/system/status - Get system status
 static esp_err_t api_get_status_handler(httpd_req_t *req) {
+    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
     cJSON *root = cJSON_CreateObject();
     
     // Uptime
@@ -256,7 +337,12 @@ static esp_err_t api_get_status_handler(httpd_req_t *req) {
 
     esp_err_t ret = send_json_response(req, root, 200);
     cJSON_Delete(root);
-    return ret;
+    re    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+turn ret;
 }
 
 // GET /api/system/info - Get device info
@@ -278,7 +364,12 @@ static esp_err_t api_get_info_handler(httpd_req_t *req) {
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     cJSON_AddStringToObject(root, "mac_address", mac_str);
     
-    cJSON_AddStringToObject(root, "firmware_version", "1.0.0");
+    cJSON_AddStringToObject(root, "firmware_v    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+ersion", "1.0.0");
 
     esp_err_t ret = send_json_response(req, root, 200);
     cJSON_Delete(root);
@@ -289,7 +380,12 @@ static esp_err_t api_get_info_handler(httpd_req_t *req) {
 static esp_err_t api_post_restart_handler(httpd_req_t *req) {
     cJSON *response = cJSON_CreateObject();
     cJSON_AddStringToObject(response, "status", "success");
-    cJSON_AddStringToObject(response, "message", "Device will restart in 2 seconds");
+    cJSON_AddStringToObject(response, "message    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+", "Device will restart in 2 seconds");
 
     send_json_response(req, response, 200);
     cJSON_Delete(response);
@@ -315,7 +411,12 @@ static esp_err_t api_post_factory_reset_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    cJSON *response = cJSON_CreateObject();
+    cJSON *response =    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+ cJSON_CreateObject();
     cJSON_AddStringToObject(response, "status", "success");
     cJSON_AddStringToObject(response, "message", "Factory reset complete. Device will restart.");
 
@@ -337,7 +438,12 @@ static esp_err_t api_get_audio_handler(httpd_req_t *req) {
     }
 
     cJSON *root = cJSON_CreateObject();
-    cJSON_AddNumberToObject(root, "sample_rate", i2s.sample_rate);
+    cJSON_AddNumberToObject(root, "sampl    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+e_rate", i2s.sample_rate);
     cJSON_AddNumberToObject(root, "bits_per_sample", i2s.bits_per_sample);
     cJSON_AddNumberToObject(root, "channels", i2s.channels);
     cJSON_AddNumberToObject(root, "bck_pin", i2s.bck_pin);
@@ -393,7 +499,12 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req) {
         i2s.ws_pin = ws->valueint;
     }
 
-    cJSON *data_in = cJSON_GetObjectItem(root, "data_in_pin");
+    cJSON *data_in = cJSON_GetObjectItem(root    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+, "data_in_pin");
     if (data_in && cJSON_IsNumber(data_in)) {
         i2s.data_in_pin = data_in->valueint;
     }
@@ -407,7 +518,12 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req) {
     cJSON_AddStringToObject(response, "message", "Audio configuration saved. Restart required.");
     cJSON_AddBoolToObject(response, "restart_required", true);
 
-    ret = send_json_response(req, response, 200);
+    ret = send_json_response(req, response, 200    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+);
     cJSON_Delete(response);
     return ret;
 }
@@ -454,7 +570,12 @@ static esp_err_t api_post_buffer_handler(httpd_req_t *req) {
         buffer.ring_buffer_size = ring_size->valueint;
     }
 
-    cJSON *dma_count = cJSON_GetObjectItem(root, "dma_buf_count");
+     // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+   cJSON *dma_count = cJSON_GetObjectItem(root, "dma_buf_count");
     if (dma_count && cJSON_IsNumber(dma_count)) {
         buffer.dma_buf_count = dma_count->valueint;
     }
@@ -480,7 +601,12 @@ static esp_err_t api_post_buffer_handler(httpd_req_t *req) {
 
 // GET /api/config/tasks - Get task configuration
 static esp_err_t api_get_tasks_handler(httpd_req_t *req) {
-    task_config_data_t tasks;
+    task_config_da    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+ta_t tasks;
     if (!config_manager_get_tasks(&tasks)) {
         httpd_resp_send_500(req);
         return ESP_FAIL;
@@ -528,7 +654,12 @@ static esp_err_t api_post_tasks_handler(httpd_req_t *req) {
     if ((item = cJSON_GetObjectItem(root, "watchdog_priority")) && cJSON_IsNumber(item))
         tasks.watchdog_priority = item->valueint;
     if ((item = cJSON_GetObjectItem(root, "web_server_priority")) && cJSON_IsNumber(item))
-        tasks.web_server_priority = item->valueint;
+        tasks.web_server_prior    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+ity = item->valueint;
     if ((item = cJSON_GetObjectItem(root, "i2s_reader_core")) && cJSON_IsNumber(item))
         tasks.i2s_reader_core = item->valueint;
     if ((item = cJSON_GetObjectItem(root, "tcp_sender_core")) && cJSON_IsNumber(item))
@@ -545,7 +676,12 @@ static esp_err_t api_post_tasks_handler(httpd_req_t *req) {
     cJSON *response = cJSON_CreateObject();
     cJSON_AddStringToObject(response, "status", "success");
     cJSON_AddStringToObject(response, "message", "Task configuration saved. Restart required.");
-    cJSON_AddBoolToObject(response, "restart_required", true);
+    cJSON_AddBoolToObject(response, "restart_required", true);    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+
 
     ret = send_json_response(req, response, 200);
     cJSON_Delete(response);
@@ -596,7 +732,12 @@ static esp_err_t api_post_error_handler(httpd_req_t *req) {
     cJSON *item;
     if ((item = cJSON_GetObjectItem(root, "max_reconnect_attempts")) && cJSON_IsNumber(item))
         error.max_reconnect_attempts = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "reconnect_backoff_ms")) && cJSON_IsNumber(item))
+    if ((item = cJSON_GetObjectItem(root, "reconnect_backoff_ms")) && cJSON_    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+IsNumber(item))
         error.reconnect_backoff_ms = item->valueint;
     if ((item = cJSON_GetObjectItem(root, "max_reconnect_backoff_ms")) && cJSON_IsNumber(item))
         error.max_reconnect_backoff_ms = item->valueint;
@@ -605,7 +746,12 @@ static esp_err_t api_post_error_handler(httpd_req_t *req) {
     if ((item = cJSON_GetObjectItem(root, "max_buffer_overflows")) && cJSON_IsNumber(item))
         error.max_buffer_overflows = item->valueint;
     if ((item = cJSON_GetObjectItem(root, "watchdog_timeout_sec")) && cJSON_IsNumber(item))
-        error.watchdog_timeout_sec = item->valueint;
+        error.watchdog_timeout_sec =     // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+item->valueint;
     if ((item = cJSON_GetObjectItem(root, "ntp_resync_interval_sec")) && cJSON_IsNumber(item))
         error.ntp_resync_interval_sec = item->valueint;
 
@@ -645,7 +791,12 @@ static esp_err_t api_get_debug_handler(httpd_req_t *req) {
 
 // POST /api/config/debug - Update debug configuration
 static esp_err_t api_post_debug_handler(httpd_req_t *req) {
-    char buf[256];
+    char buf[2    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+56];
     int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (ret <= 0) {
         httpd_resp_send_500(req);
@@ -751,7 +902,12 @@ static esp_err_t api_get_all_config_handler(httpd_req_t *req) {
         cJSON_AddNumberToObject(task_obj, "tcp_sender_core", tasks.tcp_sender_core);
         cJSON_AddNumberToObject(task_obj, "watchdog_core", tasks.watchdog_core);
         cJSON_AddNumberToObject(task_obj, "web_server_core", tasks.web_server_core);
-        cJSON_AddItemToObject(root, "tasks", task_obj);
+        cJSON_AddItemToObject(root, "task    // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+s", task_obj);
     }
 
     // Error handling
@@ -763,7 +919,12 @@ static esp_err_t api_get_all_config_handler(httpd_req_t *req) {
         cJSON_AddNumberToObject(err_obj, "max_reconnect_backoff_ms", error.max_reconnect_backoff_ms);
         cJSON_AddNumberToObject(err_obj, "max_i2s_failures", error.max_i2s_failures);
         cJSON_AddNumberToObject(err_obj, "max_buffer_overflows", error.max_buffer_overflows);
-        cJSON_AddNumberToObject(err_obj, "watchdog_timeout_sec", error.watchdog_timeout_sec);
+       // Check authentication
+    if (!check_basic_auth(req)) {
+        return send_auth_required(req);
+    }
+    
+     cJSON_AddNumberToObject(err_obj, "watchdog_timeout_sec", error.watchdog_timeout_sec);
         cJSON_AddNumberToObject(err_obj, "ntp_resync_interval_sec", error.ntp_resync_interval_sec);
         cJSON_AddItemToObject(root, "error", err_obj);
     }
@@ -861,6 +1022,16 @@ static esp_err_t monitor_page_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+static esp_err_t ota_page_handler(httpd_req_t *req) {
+    extern const unsigned char ota_html_start[] asm("_binary_ota_html_start");
+    extern const unsigned char ota_html_end[] asm("_binary_ota_html_end");
+    const size_t ota_html_size = (ota_html_end - ota_html_start);
+    
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_send(req, (const char *)ota_html_start, ota_html_size);
+    return ESP_OK;
+}
+
 // CSS handler
 static esp_err_t css_handler(httpd_req_t *req) {
     extern const unsigned char style_css_start[] asm("_binary_style_css_start");
@@ -923,6 +1094,16 @@ static esp_err_t js_monitor_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+static esp_err_t js_ota_handler(httpd_req_t *req) {
+    extern const unsigned char ota_js_start[] asm("_binary_ota_js_start");
+    extern const unsigned char ota_js_end[] asm("_binary_ota_js_end");
+    const size_t ota_js_size = (ota_js_end - ota_js_start);
+    
+    httpd_resp_set_type(req, "application/javascript");
+    httpd_resp_send(req, (const char *)ota_js_start, ota_js_size);
+    return ESP_OK;
+}
+
 bool web_server_init(void) {
     if (server != NULL) {
         ESP_LOGW(TAG, "Web server already running");
@@ -967,6 +1148,14 @@ bool web_server_init(void) {
         .user_ctx = NULL
     };
     httpd_register_uri_handler(server, &monitor_page_uri);
+
+    httpd_uri_t ota_page_uri = {
+        .uri = "/ota.html",
+        .method = HTTP_GET,
+        .handler = ota_page_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &ota_page_uri);
 
     // CSS
     httpd_uri_t css_uri = {
@@ -1017,6 +1206,14 @@ bool web_server_init(void) {
         .user_ctx = NULL
     };
     httpd_register_uri_handler(server, &js_monitor_uri);
+
+    httpd_uri_t js_ota_uri = {
+        .uri = "/js/ota.js",
+        .method = HTTP_GET,
+        .handler = js_ota_handler,
+        .user_ctx = NULL
+    };
+    httpd_register_uri_handler(server, &js_ota_uri);
 
     // Configuration endpoints
     httpd_uri_t api_get_wifi = {
@@ -1195,6 +1392,13 @@ bool web_server_init(void) {
     };
     httpd_register_uri_handler(server, &api_post_load);
 
+    // Initialize and register OTA endpoints
+    if (!ota_handler_init()) {
+        ESP_LOGW(TAG, "OTA handler init failed");
+    } else {
+        ota_handler_register_endpoints(server);
+    }
+
     ESP_LOGI(TAG, "Web server started successfully");
     return true;
 }
@@ -1205,6 +1409,7 @@ bool web_server_is_running(void) {
 
 void web_server_deinit(void) {
     if (server != NULL) {
+        ota_handler_deinit();
         httpd_stop(server);
         server = NULL;
         ESP_LOGI(TAG, "Web server stopped");

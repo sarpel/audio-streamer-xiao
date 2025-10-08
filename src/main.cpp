@@ -12,6 +12,7 @@
 #include "modules/buffer_manager.h"
 #include "modules/config_manager.h"
 #include "modules/web_server.h"
+#include "modules/captive_portal.h"
 
 static const char* TAG = "MAIN";
 
@@ -345,6 +346,45 @@ extern "C" void app_main(void) {
     // esp_task_wdt_config_t wdt_config = {...}
     // esp_task_wdt_init(&wdt_config);
     // esp_task_wdt_add(NULL);
+
+    // Check if first boot and try captive portal
+    if (config_manager_is_first_boot() || !captive_portal_is_configured()) {
+        ESP_LOGI(TAG, "Starting captive portal for initial setup...");
+        if (captive_portal_init()) {
+            ESP_LOGI(TAG, "Captive portal active. Connect to '%s' to configure.", CAPTIVE_PORTAL_SSID);
+            
+            // Initialize web server for configuration in AP mode
+            if (web_server_init()) {
+                ESP_LOGI(TAG, "Web configuration available at http://192.168.4.1");
+            }
+            
+            // Wait for configuration (timeout after CAPTIVE_PORTAL_TIMEOUT_SEC)
+            uint32_t timeout_ticks = pdMS_TO_TICKS(CAPTIVE_PORTAL_TIMEOUT_SEC * 1000);
+            uint32_t start_tick = xTaskGetTickCount();
+            
+            while (captive_portal_is_active() && 
+                   (xTaskGetTickCount() - start_tick) < timeout_ticks) {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                
+                // Check if configuration was saved
+                if (captive_portal_is_configured()) {
+                    ESP_LOGI(TAG, "Configuration received, stopping captive portal");
+                    break;
+                }
+            }
+            
+            captive_portal_stop();
+            web_server_deinit();
+            
+            if (!captive_portal_is_configured()) {
+                ESP_LOGW(TAG, "Captive portal timeout, continuing with defaults");
+            } else {
+                ESP_LOGI(TAG, "Configuration complete, rebooting to apply...");
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                esp_restart();
+            }
+        }
+    }
 
     // Initialize components with error handling
     ESP_LOGI(TAG, "Initializing WiFi...");

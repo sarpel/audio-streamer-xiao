@@ -8,6 +8,14 @@
 #define WIFI_PASSWORD "penguen1988"
 #endif
 
+// Web Authentication Configuration
+#define WEB_AUTH_USERNAME "admin"
+#define WEB_AUTH_PASSWORD "penguen1988"
+
+// Captive Portal Configuration
+#define CAPTIVE_PORTAL_SSID "AudioStreamer-Setup"
+#define CAPTIVE_PORTAL_TIMEOUT_SEC 300  // 5 minutes before switching to normal mode
+
 // Static IP Configuration (optional, set to 0,0,0,0 for DHCP)
 #define STATIC_IP_ADDR "0.0.0.0"
 #define GATEWAY_ADDR "0.0.0.0"

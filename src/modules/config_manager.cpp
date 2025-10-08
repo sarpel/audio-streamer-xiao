@@ -20,6 +20,7 @@ static buffer_config_data_t buffer_config;
 static task_config_data_t task_config;
 static error_config_data_t error_config;
 static debug_config_data_t debug_config;
+static auth_config_data_t auth_config;
 
 // Load defaults from config.h
 static void load_defaults(void) {
@@ -79,6 +80,10 @@ static void load_defaults(void) {
     debug_config.auto_reboot = ENABLE_AUTO_REBOOT;
     debug_config.i2s_reinit = ENABLE_I2S_REINIT;
     debug_config.buffer_drain = ENABLE_BUFFER_DRAIN;
+
+    // Auth defaults
+    strncpy(auth_config.username, WEB_AUTH_USERNAME, sizeof(auth_config.username) - 1);
+    strncpy(auth_config.password, WEB_AUTH_PASSWORD, sizeof(auth_config.password) - 1);
 
     ESP_LOGI(TAG, "Loaded default configuration from config.h");
 }
@@ -368,6 +373,18 @@ bool config_manager_get_debug(debug_config_data_t* config) {
 bool config_manager_set_debug(const debug_config_data_t* config) {
     if (!initialized || !config) return false;
     memcpy(&debug_config, config, sizeof(debug_config_data_t));
+    return true;
+}
+
+bool config_manager_get_auth(auth_config_data_t* config) {
+    if (!initialized || !config) return false;
+    memcpy(config, &auth_config, sizeof(auth_config_data_t));
+    return true;
+}
+
+bool config_manager_set_auth(const auth_config_data_t* config) {
+    if (!initialized || !config) return false;
+    memcpy(&auth_config, config, sizeof(auth_config_data_t));
     return true;
 }
 

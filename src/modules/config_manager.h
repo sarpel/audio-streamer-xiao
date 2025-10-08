@@ -73,6 +73,11 @@ typedef struct {
     bool buffer_drain;
 } debug_config_data_t;
 
+typedef struct {
+    char username[32];
+    char password[64];
+} auth_config_data_t;
+
 /**
  * Initialize configuration manager and NVS
  * @return true on success
@@ -177,6 +182,16 @@ bool config_manager_get_debug(debug_config_data_t* config);
  * Set debug configuration
  */
 bool config_manager_set_debug(const debug_config_data_t* config);
+
+/**
+ * Get authentication configuration
+ */
+bool config_manager_get_auth(auth_config_data_t* config);
+
+/**
+ * Set authentication configuration
+ */
+bool config_manager_set_auth(const auth_config_data_t* config);
 
 /**
  * Check if this is first boot (no config in NVS)

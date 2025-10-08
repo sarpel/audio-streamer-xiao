@@ -47,6 +47,34 @@ PlatformIO firmware for streaming I2S audio from INMP441 microphone over WiFi/TC
    pio device monitor
    ```
 
+### Alternative: ESP-IDF Direct
+
+For advanced users who want direct ESP-IDF access (menuconfig, advanced features):
+
+**Windows:**
+```bash
+# Double-click to launch ESP-IDF environment
+launch-esp-idf.bat
+```
+
+**Linux/Mac:**
+```bash
+# Make executable (first time)
+chmod +x launch-esp-idf.sh
+
+# Launch ESP-IDF environment
+./launch-esp-idf.sh
+```
+
+**Then use idf.py commands:**
+```bash
+idf.py build          # Build project
+idf.py flash monitor  # Flash and monitor
+idf.py menuconfig     # Advanced configuration
+```
+
+See [ESP-IDF_LAUNCHER_GUIDE.md](ESP-IDF_LAUNCHER_GUIDE.md) for detailed instructions.
+
 ## Project Structure
 
 ```

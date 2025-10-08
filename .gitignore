@@ -5,3 +5,12 @@
 .vscode/ipch
 build/
 .vscode/
+colorize.py
+ESP-IDF_LAUNCHER_GUIDE.md
+launch-esp-idf.bat
+launch-esp-idf.ps1
+launch-esp-idf.sh
+SERIAL_MONITOR_COLORIZATION.md
+.clangd
+
+

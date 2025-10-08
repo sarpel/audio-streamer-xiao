@@ -6,6 +6,8 @@ idf_component_register(
          "modules/buffer_manager.cpp"
          "modules/config_manager.cpp"
          "modules/web_server.cpp"
+         "modules/ota_handler.cpp"
+         "modules/captive_portal.cpp"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         driver
@@ -21,16 +23,20 @@ idf_component_register(
         freertos
         esp_http_server
         json
+        app_update
+        mbedtls
 )
 
 # Embed web UI files
 target_add_binary_data(${COMPONENT_LIB} "../data/index.html" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "../data/config.html" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "../data/monitor.html" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/ota.html" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "../data/css/style.css" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "../data/js/api.js" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "../data/js/utils.js" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "../data/js/app.js" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "../data/js/config.js" TEXT)
 target_add_binary_data(${COMPONENT_LIB} "../data/js/monitor.js" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/js/ota.js" TEXT)
 
