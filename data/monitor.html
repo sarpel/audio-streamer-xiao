@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoring - ESP32 Audio Streamer</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 ESP32 Audio Streamer</h1>
+            <div class="status-bar">
+                <span id="wifi-status" class="status-badge">WiFi: <span class="loading">...</span></span>
+                <span id="tcp-status" class="status-badge">TCP: <span class="loading">...</span></span>
+            </div>
+        </header>
+
+        <nav>
+            <a href="/">Dashboard</a>
+            <a href="/config.html">Configuration</a>
+            <a href="/monitor.html" class="active">Monitoring</a>
+        </nav>
+
+        <main>
+            <section class="card">
+                <h2>Real-time Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">Free Heap</div>
+                        <div class="stat-value" id="monitor-heap">...</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Min Free Heap</div>
+                        <div class="stat-value" id="monitor-min-heap">...</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Buffer Usage</div>
+                        <div class="stat-value" id="monitor-buffer">...</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Uptime</div>
+                        <div class="stat-value" id="monitor-uptime">...</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Network Monitoring</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <strong>WiFi Connected:</strong>
+                        <span id="monitor-wifi-connected">...</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>TCP Connected:</strong>
+                        <span id="monitor-tcp-connected">...</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Bytes Sent:</strong>
+                        <span id="monitor-bytes-sent">...</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Reconnect Count:</strong>
+                        <span id="monitor-reconnects">...</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Audio Monitoring</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <strong>Sample Rate:</strong>
+                        <span id="monitor-sample-rate">...</span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Buffer Size:</strong>
+                        <span id="monitor-buffer-size">...</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>Auto-Refresh</h2>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="auto-refresh" checked>
+                        Enable Auto-Refresh (every 2 seconds)
+                    </label>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>ESP32-S3 Audio Streamer v1.0.0</p>
+        </footer>
+    </div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/utils.js"></script>
+    <script src="/js/monitor.js"></script>
+</body>
+</html>

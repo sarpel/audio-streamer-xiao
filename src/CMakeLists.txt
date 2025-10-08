@@ -22,3 +22,15 @@ idf_component_register(
         esp_http_server
         json
 )
+
+# Embed web UI files
+target_add_binary_data(${COMPONENT_LIB} "../data/index.html" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/config.html" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/monitor.html" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/css/style.css" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/js/api.js" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/js/utils.js" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/js/app.js" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/js/config.js" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "../data/js/monitor.js" TEXT)
+
