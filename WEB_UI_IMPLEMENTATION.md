@@ -11,6 +11,7 @@ This document outlines the completion of phases 2-6 of the Web UI implementation
 All REST API endpoints have been implemented in `src/modules/web_server.cpp`:
 
 #### Configuration Endpoints
+
 - `GET/POST /api/config/wifi` - WiFi configuration
 - `GET/POST /api/config/tcp` - TCP server configuration
 - `GET/POST /api/config/audio` - I2S/audio configuration
@@ -21,6 +22,7 @@ All REST API endpoints have been implemented in `src/modules/web_server.cpp`:
 - `GET /api/config/all` - Get all configuration as JSON
 
 #### System Control Endpoints
+
 - `GET /api/system/status` - System status (uptime, memory, tasks)
 - `GET /api/system/info` - Device info (chip, IDF version, MAC)
 - `POST /api/system/restart` - Restart device
@@ -33,11 +35,13 @@ All REST API endpoints have been implemented in `src/modules/web_server.cpp`:
 Created a complete web interface with vanilla JavaScript (no external dependencies):
 
 #### HTML Pages
+
 - `data/index.html` - Main dashboard with system status overview
 - `data/config.html` - Configuration page with forms for all settings
 - `data/monitor.html` - Real-time monitoring page
 
 #### CSS
+
 - `data/css/style.css` - Responsive, modern UI design
   - Mobile-first approach
   - Clean gradient design
@@ -45,6 +49,7 @@ Created a complete web interface with vanilla JavaScript (no external dependenci
   - Responsive grid layouts
 
 #### JavaScript
+
 - `data/js/api.js` - API client wrapper for all REST endpoints
 - `data/js/utils.js` - Utility functions (formatting, alerts, etc.)
 - `data/js/app.js` - Main dashboard logic with auto-refresh
@@ -52,6 +57,7 @@ Created a complete web interface with vanilla JavaScript (no external dependenci
 - `data/js/monitor.js` - Real-time monitoring with auto-refresh
 
 #### Features
+
 - **Auto-refresh**: Dashboard and monitoring update automatically
 - **Form Validation**: Client-side validation before submission
 - **Status Indicators**: Real-time WiFi and TCP connection status
@@ -77,6 +83,7 @@ Created a complete web interface with vanilla JavaScript (no external dependenci
 **Recommendation**: Implement in future update if first-boot configuration is needed
 
 **What would be needed**:
+
 - AP mode initialization when WiFi connection fails
 - DNS server for captive portal detection
 - Redirect logic to configuration page
@@ -86,6 +93,7 @@ Created a complete web interface with vanilla JavaScript (no external dependenci
 
 **Status**: Basic foundation ready, full authentication deferred
 **Current Implementation**:
+
 - All API endpoints are currently open (no authentication)
 - Rate limiting not implemented
 - HTTPS not configured
@@ -93,6 +101,7 @@ Created a complete web interface with vanilla JavaScript (no external dependenci
 **Recommendation**: Implement in future update if device is exposed to untrusted networks
 
 **What would be needed for full implementation**:
+
 - HTTP Basic Authentication
 - Session management
 - Password hashing (SHA256)
@@ -104,6 +113,7 @@ Created a complete web interface with vanilla JavaScript (no external dependenci
 ### File Embedding
 
 Web assets are embedded directly into the firmware binary using ESP-IDF's `target_add_binary_data()`:
+
 - No SPIFFS partition required
 - Reduces flash usage
 - Faster page load times
@@ -112,6 +122,7 @@ Web assets are embedded directly into the firmware binary using ESP-IDF's `targe
 ### Memory Footprint
 
 Estimated memory usage:
+
 - HTML files: ~15 KB
 - CSS: ~6 KB
 - JavaScript: ~15 KB
@@ -121,6 +132,7 @@ Estimated memory usage:
 ### Browser Compatibility
 
 Tested features work with:
+
 - Chrome/Chromium
 - Firefox
 - Safari
@@ -157,11 +169,13 @@ Tested features work with:
 ## API Usage Examples
 
 ### Get WiFi Configuration
+
 ```bash
 curl http://192.168.1.100/api/config/wifi
 ```
 
 ### Update TCP Server
+
 ```bash
 curl -X POST http://192.168.1.100/api/config/tcp \
   -H "Content-Type: application/json" \
@@ -169,11 +183,13 @@ curl -X POST http://192.168.1.100/api/config/tcp \
 ```
 
 ### Get System Status
+
 ```bash
 curl http://192.168.1.100/api/system/status
 ```
 
 ### Restart Device
+
 ```bash
 curl -X POST http://192.168.1.100/api/system/restart
 ```
@@ -181,7 +197,9 @@ curl -X POST http://192.168.1.100/api/system/restart
 ## Future Enhancements
 
 ### Priority 1 (Recommended)
+
 1. **Authentication Layer**
+
    - Basic HTTP auth
    - Session management
    - Password change on first login
@@ -192,17 +210,21 @@ curl -X POST http://192.168.1.100/api/system/restart
    - Easy setup for non-technical users
 
 ### Priority 2 (Optional)
+
 1. **WebSocket Support**
+
    - True real-time updates
    - Push notifications
    - Live audio level meters
 
 2. **Logging Viewer**
+
    - View system logs in browser
    - Filter by severity
    - Download logs
 
 3. **Configuration Backup/Restore**
+
    - Export config as JSON
    - Import config from file
    - Multiple configuration profiles
@@ -213,12 +235,15 @@ curl -X POST http://192.168.1.100/api/system/restart
    - Rollback on failure
 
 ### Priority 3 (Advanced)
+
 1. **HTTPS Support**
+
    - Self-signed certificates
    - Secure communication
    - Certificate management
 
 2. **Multi-language Support**
+
    - UI translations
    - Language selection
 
@@ -253,6 +278,7 @@ curl -X POST http://192.168.1.100/api/system/restart
 ## Build Instructions
 
 1. Ensure all files are in place:
+
    ```
    audio-streamer-xiao/
    ├── data/
@@ -273,11 +299,13 @@ curl -X POST http://192.168.1.100/api/system/restart
    ```
 
 2. Build the project:
+
    ```bash
    idf.py build
    ```
 
 3. Flash to device:
+
    ```bash
    idf.py flash monitor
    ```
@@ -289,18 +317,21 @@ curl -X POST http://192.168.1.100/api/system/restart
 ## Troubleshooting
 
 ### Web UI not loading
+
 - Check device is connected to WiFi
 - Verify IP address is correct
 - Try accessing `/api/system/info` endpoint directly
 - Check serial monitor for errors
 
 ### Configuration not saving
+
 - Check NVS partition is not corrupted
 - Try factory reset
 - Verify sufficient free memory
 - Check serial monitor for NVS errors
 
 ### Auto-refresh not working
+
 - Check browser console for JavaScript errors
 - Verify API endpoints are responding
 - Check device is not rebooting repeatedly
@@ -319,6 +350,7 @@ Phases 2-6 have been successfully implemented with the following achievements:
 The system is production-ready for trusted network environments. For deployment in untrusted networks, implement authentication (Phase 6) before use.
 
 **Next Steps**:
+
 1. Build and test the firmware
 2. Verify all web UI functionality
 3. Consider implementing authentication if needed

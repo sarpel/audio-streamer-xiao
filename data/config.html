@@ -1,201 +1,247 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Configuration - ESP32 Audio Streamer</title>
-    <link rel="stylesheet" href="/css/style.css">
-</head>
-<body>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
     <div class="container">
-        <header>
-            <h1>🎵 ESP32 Audio Streamer</h1>
-            <div class="status-bar">
-                <span id="wifi-status" class="status-badge">WiFi: <span class="loading">...</span></span>
-                <span id="tcp-status" class="status-badge">TCP: <span class="loading">...</span></span>
+      <header>
+        <h1>🎵 ESP32 Audio Streamer</h1>
+        <div class="status-bar">
+          <span id="wifi-status" class="status-badge"
+            >WiFi: <span class="loading">...</span></span
+          >
+          <span id="tcp-status" class="status-badge"
+            >TCP: <span class="loading">...</span></span
+          >
+        </div>
+      </header>
+
+      <nav>
+        <a href="/">Dashboard</a>
+        <a href="/config.html" class="active">Configuration</a>
+        <a href="/monitor.html">Monitoring</a>
+      </nav>
+
+      <main>
+        <!-- WiFi Configuration -->
+        <section class="card">
+          <h2>WiFi Configuration</h2>
+          <form id="wifi-form">
+            <div class="form-group">
+              <label for="wifi-ssid">SSID:</label>
+              <input type="text" id="wifi-ssid" required />
             </div>
-        </header>
+            <div class="form-group">
+              <label for="wifi-password">Password:</label>
+              <input type="password" id="wifi-password" />
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="wifi-static-ip" />
+                Use Static IP
+              </label>
+            </div>
+            <div id="static-ip-fields" style="display: none">
+              <div class="form-group">
+                <label for="wifi-static-ip-addr">Static IP:</label>
+                <input
+                  type="text"
+                  id="wifi-static-ip-addr"
+                  placeholder="192.168.1.100"
+                />
+              </div>
+              <div class="form-group">
+                <label for="wifi-gateway">Gateway:</label>
+                <input
+                  type="text"
+                  id="wifi-gateway"
+                  placeholder="192.168.1.1"
+                />
+              </div>
+              <div class="form-group">
+                <label for="wifi-subnet">Subnet Mask:</label>
+                <input
+                  type="text"
+                  id="wifi-subnet"
+                  placeholder="255.255.255.0"
+                />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="wifi-dns-primary">Primary DNS:</label>
+              <input type="text" id="wifi-dns-primary" placeholder="8.8.8.8" />
+            </div>
+            <div class="form-group">
+              <label for="wifi-dns-secondary">Secondary DNS:</label>
+              <input
+                type="text"
+                id="wifi-dns-secondary"
+                placeholder="1.1.1.1"
+              />
+            </div>
+            <button type="submit" class="btn btn-primary">
+              Save WiFi Settings
+            </button>
+          </form>
+        </section>
 
-        <nav>
-            <a href="/">Dashboard</a>
-            <a href="/config.html" class="active">Configuration</a>
-            <a href="/monitor.html">Monitoring</a>
-        </nav>
+        <!-- TCP Configuration -->
+        <section class="card">
+          <h2>TCP Server Configuration</h2>
+          <form id="tcp-form">
+            <div class="form-group">
+              <label for="tcp-server-ip">Server IP:</label>
+              <input
+                type="text"
+                id="tcp-server-ip"
+                required
+                placeholder="192.168.1.50"
+              />
+            </div>
+            <div class="form-group">
+              <label for="tcp-server-port">Server Port:</label>
+              <input
+                type="number"
+                id="tcp-server-port"
+                required
+                placeholder="9000"
+              />
+            </div>
+            <button type="submit" class="btn btn-primary">
+              Save TCP Settings
+            </button>
+          </form>
+        </section>
 
-        <main>
-            <!-- WiFi Configuration -->
-            <section class="card">
-                <h2>WiFi Configuration</h2>
-                <form id="wifi-form">
-                    <div class="form-group">
-                        <label for="wifi-ssid">SSID:</label>
-                        <input type="text" id="wifi-ssid" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="wifi-password">Password:</label>
-                        <input type="password" id="wifi-password">
-                    </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="wifi-static-ip">
-                            Use Static IP
-                        </label>
-                    </div>
-                    <div id="static-ip-fields" style="display:none;">
-                        <div class="form-group">
-                            <label for="wifi-static-ip-addr">Static IP:</label>
-                            <input type="text" id="wifi-static-ip-addr" placeholder="192.168.1.100">
-                        </div>
-                        <div class="form-group">
-                            <label for="wifi-gateway">Gateway:</label>
-                            <input type="text" id="wifi-gateway" placeholder="192.168.1.1">
-                        </div>
-                        <div class="form-group">
-                            <label for="wifi-subnet">Subnet Mask:</label>
-                            <input type="text" id="wifi-subnet" placeholder="255.255.255.0">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="wifi-dns-primary">Primary DNS:</label>
-                        <input type="text" id="wifi-dns-primary" placeholder="8.8.8.8">
-                    </div>
-                    <div class="form-group">
-                        <label for="wifi-dns-secondary">Secondary DNS:</label>
-                        <input type="text" id="wifi-dns-secondary" placeholder="1.1.1.1">
-                    </div>
-                    <button type="submit" class="btn btn-primary">Save WiFi Settings</button>
-                </form>
-            </section>
+        <!-- Audio Configuration -->
+        <section class="card">
+          <h2>Audio Configuration</h2>
+          <form id="audio-form">
+            <div class="form-group">
+              <label for="audio-sample-rate">Sample Rate:</label>
+              <select id="audio-sample-rate">
+                <option value="8000">8000 Hz</option>
+                <option value="16000">16000 Hz</option>
+                <option value="22050">22050 Hz</option>
+                <option value="32000">32000 Hz</option>
+                <option value="44100">44100 Hz</option>
+                <option value="48000">48000 Hz</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="audio-bits">Bits per Sample:</label>
+              <select id="audio-bits">
+                <option value="16">16-bit</option>
+                <option value="24">24-bit</option>
+                <option value="32">32-bit</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="audio-channels">Channels:</label>
+              <select id="audio-channels">
+                <option value="1">Mono</option>
+                <option value="2">Stereo</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="audio-bck-pin">BCK Pin (GPIO):</label>
+              <input type="number" id="audio-bck-pin" min="0" max="48" />
+            </div>
+            <div class="form-group">
+              <label for="audio-ws-pin">WS Pin (GPIO):</label>
+              <input type="number" id="audio-ws-pin" min="0" max="48" />
+            </div>
+            <div class="form-group">
+              <label for="audio-data-pin">Data In Pin (GPIO):</label>
+              <input type="number" id="audio-data-pin" min="0" max="48" />
+            </div>
+            <button type="submit" class="btn btn-primary">
+              Save Audio Settings
+            </button>
+          </form>
+        </section>
 
-            <!-- TCP Configuration -->
-            <section class="card">
-                <h2>TCP Server Configuration</h2>
-                <form id="tcp-form">
-                    <div class="form-group">
-                        <label for="tcp-server-ip">Server IP:</label>
-                        <input type="text" id="tcp-server-ip" required placeholder="192.168.1.50">
-                    </div>
-                    <div class="form-group">
-                        <label for="tcp-server-port">Server Port:</label>
-                        <input type="number" id="tcp-server-port" required placeholder="9000">
-                    </div>
-                    <button type="submit" class="btn btn-primary">Save TCP Settings</button>
-                </form>
-            </section>
+        <!-- Buffer Configuration -->
+        <section class="card">
+          <h2>Buffer Configuration</h2>
+          <form id="buffer-form">
+            <div class="form-group">
+              <label for="buffer-ring-size">Ring Buffer Size (bytes):</label>
+              <input
+                type="number"
+                id="buffer-ring-size"
+                min="32768"
+                max="262144"
+                step="1024"
+              />
+              <small>32 KB - 256 KB</small>
+            </div>
+            <div class="form-group">
+              <label for="buffer-dma-count">DMA Buffer Count:</label>
+              <input type="number" id="buffer-dma-count" min="4" max="16" />
+            </div>
+            <div class="form-group">
+              <label for="buffer-dma-len">DMA Buffer Length:</label>
+              <input type="number" id="buffer-dma-len" min="256" max="2048" />
+            </div>
+            <button type="submit" class="btn btn-primary">
+              Save Buffer Settings
+            </button>
+          </form>
+        </section>
 
-            <!-- Audio Configuration -->
-            <section class="card">
-                <h2>Audio Configuration</h2>
-                <form id="audio-form">
-                    <div class="form-group">
-                        <label for="audio-sample-rate">Sample Rate:</label>
-                        <select id="audio-sample-rate">
-                            <option value="8000">8000 Hz</option>
-                            <option value="16000">16000 Hz</option>
-                            <option value="22050">22050 Hz</option>
-                            <option value="32000">32000 Hz</option>
-                            <option value="44100">44100 Hz</option>
-                            <option value="48000">48000 Hz</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="audio-bits">Bits per Sample:</label>
-                        <select id="audio-bits">
-                            <option value="16">16-bit</option>
-                            <option value="24">24-bit</option>
-                            <option value="32">32-bit</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="audio-channels">Channels:</label>
-                        <select id="audio-channels">
-                            <option value="1">Mono</option>
-                            <option value="2">Stereo</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="audio-bck-pin">BCK Pin (GPIO):</label>
-                        <input type="number" id="audio-bck-pin" min="0" max="48">
-                    </div>
-                    <div class="form-group">
-                        <label for="audio-ws-pin">WS Pin (GPIO):</label>
-                        <input type="number" id="audio-ws-pin" min="0" max="48">
-                    </div>
-                    <div class="form-group">
-                        <label for="audio-data-pin">Data In Pin (GPIO):</label>
-                        <input type="number" id="audio-data-pin" min="0" max="48">
-                    </div>
-                    <button type="submit" class="btn btn-primary">Save Audio Settings</button>
-                </form>
-            </section>
+        <!-- Debug Configuration -->
+        <section class="card">
+          <h2>Debug & Recovery Settings</h2>
+          <form id="debug-form">
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="debug-enabled" />
+                Enable Debug Logging
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="debug-stack-monitoring" />
+                Enable Stack Monitoring
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="debug-auto-reboot" />
+                Auto Reboot on Critical Errors
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="debug-i2s-reinit" />
+                Auto I2S Reinitialization
+              </label>
+            </div>
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="debug-buffer-drain" />
+                Force Buffer Drain on Overflow
+              </label>
+            </div>
+            <button type="submit" class="btn btn-primary">
+              Save Debug Settings
+            </button>
+          </form>
+        </section>
+      </main>
 
-            <!-- Buffer Configuration -->
-            <section class="card">
-                <h2>Buffer Configuration</h2>
-                <form id="buffer-form">
-                    <div class="form-group">
-                        <label for="buffer-ring-size">Ring Buffer Size (bytes):</label>
-                        <input type="number" id="buffer-ring-size" min="32768" max="262144" step="1024">
-                        <small>32 KB - 256 KB</small>
-                    </div>
-                    <div class="form-group">
-                        <label for="buffer-dma-count">DMA Buffer Count:</label>
-                        <input type="number" id="buffer-dma-count" min="4" max="16">
-                    </div>
-                    <div class="form-group">
-                        <label for="buffer-dma-len">DMA Buffer Length:</label>
-                        <input type="number" id="buffer-dma-len" min="256" max="2048">
-                    </div>
-                    <button type="submit" class="btn btn-primary">Save Buffer Settings</button>
-                </form>
-            </section>
-
-            <!-- Debug Configuration -->
-            <section class="card">
-                <h2>Debug & Recovery Settings</h2>
-                <form id="debug-form">
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="debug-enabled">
-                            Enable Debug Logging
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="debug-stack-monitoring">
-                            Enable Stack Monitoring
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="debug-auto-reboot">
-                            Auto Reboot on Critical Errors
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="debug-i2s-reinit">
-                            Auto I2S Reinitialization
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="debug-buffer-drain">
-                            Force Buffer Drain on Overflow
-                        </label>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Save Debug Settings</button>
-                </form>
-            </section>
-        </main>
-
-        <footer>
-            <p>ESP32-S3 Audio Streamer v1.0.0</p>
-        </footer>
+      <footer>
+        <p>ESP32-S3 Audio Streamer v1.0.0</p>
+      </footer>
     </div>
 
     <script src="/js/api.js"></script>
     <script src="/js/utils.js"></script>
     <script src="/js/config.js"></script>
-</body>
+  </body>
 </html>
