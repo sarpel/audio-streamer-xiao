@@ -5,6 +5,7 @@
 #include "buffer_manager.h"
 #include "i2s_handler.h"
 #include "ota_handler.h"
+#include "validation_utils.h"
 #include "../config.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -172,11 +173,29 @@ static esp_err_t api_post_wifi_handler(httpd_req_t *req) {
     // Update fields if present
     cJSON *ssid = cJSON_GetObjectItem(root, "ssid");
     if (ssid && cJSON_IsString(ssid)) {
+        if (!validate_string_length(ssid->valuestring, sizeof(wifi.ssid) - 1)) {
+            cJSON_Delete(root);
+            cJSON *err_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_response, "status", "error");
+            cJSON_AddStringToObject(err_response, "message", "Invalid SSID: too long");
+            int ret = send_json_response(req, err_response, 400);
+            cJSON_Delete(err_response);
+            return ret;
+        }
         strncpy(wifi.ssid, ssid->valuestring, sizeof(wifi.ssid) - 1);
     }
 
     cJSON *password = cJSON_GetObjectItem(root, "password");
     if (password && cJSON_IsString(password) && strcmp(password->valuestring, "********") != 0) {
+        if (!validate_string_length(password->valuestring, sizeof(wifi.password) - 1)) {
+            cJSON_Delete(root);
+            cJSON *err_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_response, "status", "error");
+            cJSON_AddStringToObject(err_response, "message", "Invalid password: too long");
+            int ret = send_json_response(req, err_response, 400);
+            cJSON_Delete(err_response);
+            return ret;
+        }
         strncpy(wifi.password, password->valuestring, sizeof(wifi.password) - 1);
     }
 
@@ -187,26 +206,71 @@ static esp_err_t api_post_wifi_handler(httpd_req_t *req) {
 
     cJSON *static_ip = cJSON_GetObjectItem(root, "static_ip");
     if (static_ip && cJSON_IsString(static_ip)) {
+        if (!validate_ip_address(static_ip->valuestring)) {
+            cJSON_Delete(root);
+            cJSON *err_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_response, "status", "error");
+            cJSON_AddStringToObject(err_response, "message", "Invalid static IP address format");
+            int ret = send_json_response(req, err_response, 400);
+            cJSON_Delete(err_response);
+            return ret;
+        }
         strncpy(wifi.static_ip, static_ip->valuestring, sizeof(wifi.static_ip) - 1);
     }
 
     cJSON *gateway = cJSON_GetObjectItem(root, "gateway");
     if (gateway && cJSON_IsString(gateway)) {
+        if (!validate_ip_address(gateway->valuestring)) {
+            cJSON_Delete(root);
+            cJSON *err_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_response, "status", "error");
+            cJSON_AddStringToObject(err_response, "message", "Invalid gateway IP address format");
+            int ret = send_json_response(req, err_response, 400);
+            cJSON_Delete(err_response);
+            return ret;
+        }
         strncpy(wifi.gateway, gateway->valuestring, sizeof(wifi.gateway) - 1);
     }
 
     cJSON *subnet = cJSON_GetObjectItem(root, "subnet");
     if (subnet && cJSON_IsString(subnet)) {
+        if (!validate_ip_address(subnet->valuestring)) {
+            cJSON_Delete(root);
+            cJSON *err_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_response, "status", "error");
+            cJSON_AddStringToObject(err_response, "message", "Invalid subnet mask format");
+            int ret = send_json_response(req, err_response, 400);
+            cJSON_Delete(err_response);
+            return ret;
+        }
         strncpy(wifi.subnet, subnet->valuestring, sizeof(wifi.subnet) - 1);
     }
 
     cJSON *dns_primary = cJSON_GetObjectItem(root, "dns_primary");
     if (dns_primary && cJSON_IsString(dns_primary)) {
+        if (!validate_ip_address(dns_primary->valuestring)) {
+            cJSON_Delete(root);
+            cJSON *err_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_response, "status", "error");
+            cJSON_AddStringToObject(err_response, "message", "Invalid primary DNS IP address format");
+            int ret = send_json_response(req, err_response, 400);
+            cJSON_Delete(err_response);
+            return ret;
+        }
         strncpy(wifi.dns_primary, dns_primary->valuestring, sizeof(wifi.dns_primary) - 1);
     }
 
     cJSON *dns_secondary = cJSON_GetObjectItem(root, "dns_secondary");
     if (dns_secondary && cJSON_IsString(dns_secondary)) {
+        if (!validate_ip_address(dns_secondary->valuestring)) {
+            cJSON_Delete(root);
+            cJSON *err_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_response, "status", "error");
+            cJSON_AddStringToObject(err_response, "message", "Invalid secondary DNS IP address format");
+            int ret = send_json_response(req, err_response, 400);
+            cJSON_Delete(err_response);
+            return ret;
+        }
         strncpy(wifi.dns_secondary, dns_secondary->valuestring, sizeof(wifi.dns_secondary) - 1);
     }
 
@@ -273,11 +337,29 @@ static esp_err_t api_post_tcp_handler(httpd_req_t *req) {
 
     cJSON *server_ip = cJSON_GetObjectItem(root, "server_ip");
     if (server_ip && cJSON_IsString(server_ip)) {
+        if (!validate_ip_address(server_ip->valuestring)) {
+            cJSON_Delete(root);
+            cJSON *err_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_response, "status", "error");
+            cJSON_AddStringToObject(err_response, "message", "Invalid TCP server IP address format");
+            int ret = send_json_response(req, err_response, 400);
+            cJSON_Delete(err_response);
+            return ret;
+        }
         strncpy(tcp.server_ip, server_ip->valuestring, sizeof(tcp.server_ip) - 1);
     }
 
     cJSON *server_port = cJSON_GetObjectItem(root, "server_port");
     if (server_port && cJSON_IsNumber(server_port)) {
+        if (!validate_port(server_port->valueint)) {
+            cJSON_Delete(root);
+            cJSON *err_response = cJSON_CreateObject();
+            cJSON_AddStringToObject(err_response, "status", "error");
+            cJSON_AddStringToObject(err_response, "message", "Invalid port number (must be 1-65535)");
+            int ret = send_json_response(req, err_response, 400);
+            cJSON_Delete(err_response);
+            return ret;
+        }
         tcp.server_port = server_port->valueint;
     }
 

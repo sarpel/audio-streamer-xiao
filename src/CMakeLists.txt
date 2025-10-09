@@ -8,6 +8,7 @@ idf_component_register(
          "modules/web_server.cpp"
          "modules/ota_handler.cpp"
          "modules/captive_portal.cpp"
+         "modules/validation_utils.cpp"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         driver

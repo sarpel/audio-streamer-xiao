@@ -1,16 +1,22 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// WiFi Configuration
+// WARNING: These are default credentials only. 
+// Configure via Web UI after first boot.
+// Do NOT commit real credentials to version control.
 #ifndef WIFI_SSID
-#define WIFI_SSID "Sarpel_2G"
+#define WIFI_SSID "ESP32-AudioStreamer"
 #endif
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "penguen1988"
+#define WIFI_PASSWORD "changeme123"
 #endif
 
 // Web Authentication Configuration
-#define WEB_AUTH_USERNAME "sarpel"
-#define WEB_AUTH_PASSWORD "13524678"
+// WARNING: Change these defaults via Web UI after first boot
+// Default username: admin, password: admin123
+#define WEB_AUTH_USERNAME "admin"
+#define WEB_AUTH_PASSWORD "admin123"
 
 // Captive Portal Configuration
 #define CAPTIVE_PORTAL_SSID "AudioStreamer-Setup"

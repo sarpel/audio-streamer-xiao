@@ -65,7 +65,7 @@ size_t buffer_manager_write(const int32_t* data, size_t samples) {
     }
 
     // ✅ Add timeout instead of blocking forever
-    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(BUFFER_MUTEX_TIMEOUT_MS)) != pdTRUE) {
         ESP_LOGE(TAG, "CRITICAL: Mutex timeout in write");
         return 0;  // Or trigger recovery
     }
@@ -80,10 +80,19 @@ size_t buffer_manager_write(const int32_t* data, size_t samples) {
         overflow_occurred = true;
     }
 
-    // Write samples to ring buffer
-    for (size_t i = 0; i < samples_to_write; i++) {
-        ring_buffer[write_index] = data[i];
-        write_index = (write_index + 1) % buffer_size_samples;
+    // Write samples to ring buffer (optimized with memcpy)
+    size_t space_to_end = buffer_size_samples - write_index;
+    
+    if (samples_to_write <= space_to_end) {
+        // Single contiguous copy
+        memcpy(&ring_buffer[write_index], data, samples_to_write * sizeof(int32_t));
+        write_index = (write_index + samples_to_write) % buffer_size_samples;
+    } else {
+        // Two-part copy (wrap around)
+        memcpy(&ring_buffer[write_index], data, space_to_end * sizeof(int32_t));
+        size_t remaining = samples_to_write - space_to_end;
+        memcpy(&ring_buffer[0], &data[space_to_end], remaining * sizeof(int32_t));
+        write_index = remaining;
     }
 
     available_samples += samples_to_write;
@@ -105,10 +114,19 @@ size_t buffer_manager_read(int32_t* data, size_t samples) {
 
     size_t samples_to_read = (samples > available_samples) ? available_samples : samples;
 
-    // Read samples from ring buffer
-    for (size_t i = 0; i < samples_to_read; i++) {
-        data[i] = ring_buffer[read_index];
-        read_index = (read_index + 1) % buffer_size_samples;
+    // Read samples from ring buffer (optimized with memcpy)
+    size_t space_to_end = buffer_size_samples - read_index;
+    
+    if (samples_to_read <= space_to_end) {
+        // Single contiguous copy
+        memcpy(data, &ring_buffer[read_index], samples_to_read * sizeof(int32_t));
+        read_index = (read_index + samples_to_read) % buffer_size_samples;
+    } else {
+        // Two-part copy (wrap around)
+        memcpy(data, &ring_buffer[read_index], space_to_end * sizeof(int32_t));
+        size_t remaining = samples_to_read - space_to_end;
+        memcpy(&data[space_to_end], &ring_buffer[0], remaining * sizeof(int32_t));
+        read_index = remaining;
     }
 
     available_samples -= samples_to_read;
