@@ -6,17 +6,17 @@
 // Configure via Web UI after first boot.
 // Do NOT commit real credentials to version control.
 #ifndef WIFI_SSID
-#define WIFI_SSID "ESP32-AudioStreamer"
+#define WIFI_SSID "Sarpel_2G"
 #endif
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "changeme123"
+#define WIFI_PASSWORD "penguen1988"
 #endif
 
 // Web Authentication Configuration
 // WARNING: Change these defaults via Web UI after first boot
-// Default username: admin, password: admin123
+// Default username: admin, password: 13524678
 #define WEB_AUTH_USERNAME "admin"
-#define WEB_AUTH_PASSWORD "admin123"
+#define WEB_AUTH_PASSWORD "13524678"
 
 // Captive Portal Configuration
 #define CAPTIVE_PORTAL_SSID "AudioStreamer-Setup"
