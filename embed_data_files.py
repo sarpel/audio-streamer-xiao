@@ -8,16 +8,20 @@ import os
 # Define the data files to embed
 data_files = [
     "data/index.html",
-    "data/config.html", 
+    "data/config.html",
     "data/monitor.html",
     "data/ota.html",
+    "data/logs.html",
+    "data/network.html",
     "data/css/style.css",
     "data/js/api.js",
     "data/js/utils.js",
     "data/js/app.js",
     "data/js/config.js",
     "data/js/monitor.js",
-    "data/js/ota.js"
+    "data/js/ota.js",
+    "data/js/logs.js",
+    "data/js/network.js"
 ]
 
 build_dir = env.subst("$BUILD_DIR")
