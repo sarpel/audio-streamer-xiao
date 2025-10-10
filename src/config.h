@@ -29,7 +29,7 @@
 
 // NTP Configuration
 #define NTP_SERVER "pool.ntp.org"
-#define NTP_TIMEZONE "UTC+3" // Adjust for your timezone
+#define NTP_TIMEZONE "UTC-3" // Adjust for your timezone
 
 // I2S Pin Configuration (Seeed XIAO ESP32-S3)
 #define I2S_BCK_PIN 2     // Bit Clock (GPIO 2)
