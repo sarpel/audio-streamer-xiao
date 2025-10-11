@@ -74,7 +74,7 @@ bool tcp_streamer_init(void) {
     ESP_LOGI(TAG, "Packing buffer allocated: %zu bytes", packing_buffer_size);
 
     // Attempt connection with retries
-    int max_retries = 5;
+    int max_retries = TCP_CONNECT_MAX_RETRIES;
     int retry_delay_ms = 2000;
 
     for (int i = 0; i < max_retries; i++) {

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Network Diagnostics - Audio Streamer</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      .wifi-network {
+        padding: 10px;
+        margin: 5px 0;
+        background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+        border-radius: 5px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .wifi-network:hover {
+        background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);
+        cursor: pointer;
+      }
+
+      .wifi-info {
+        flex: 1;
+      }
+
+      .wifi-ssid {
+        font-weight: bold;
+        color: #4488ff;
+      }
+
+      .wifi-details {
+        font-size: 12px;
+        color: #888;
+        margin-top: 5px;
+      }
+
+      .wifi-signal {
+        padding: 5px 10px;
+        border-radius: 3px;
+        font-size: 12px;
+        font-weight: bold;
+      }
+
+      .signal-excellent {
+        background: #00ff88;
+        color: #000;
+      }
+
+      .signal-good {
+        background: #88ff00;
+        color: #000;
+      }
+
+      .signal-fair {
+        background: #ffaa00;
+        color: #000;
+      }
+
+      .signal-weak {
+        background: #ff4444;
+        color: #fff;
+      }
+
+      .scan-results {
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      .ping-result {
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 5px;
+        padding: 15px;
+        margin-top: 15px;
+        font-family: "Courier New", monospace;
+        font-size: 13px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .ping-line {
+        margin: 3px 0;
+        color: #ddd;
+      }
+
+      .ping-success {
+        color: #00ff88;
+      }
+
+      .ping-failed {
+        color: #ff4444;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🌐 Network Diagnostics</h1>
+        <p>WiFi Scanning & Network Tools</p>
+      </header>
+
+      <nav class="nav-tabs">
+        <a href="/">Dashboard</a>
+        <a href="/config.html">Configuration</a>
+        <a href="/monitor.html">Monitoring</a>
+        <a href="/logs.html">Logs</a>
+        <a href="/network.html" class="active">Network</a>
+        <a href="/ota.html">OTA Update</a>
+      </nav>
+
+      <main>
+        <!-- Current Network Status -->
+        <section class="card">
+          <h2>📡 Current Network Status</h2>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Status:</span>
+              <span id="network-status" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">SSID:</span>
+              <span id="network-ssid" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">IP Address:</span>
+              <span id="network-ip" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Gateway:</span>
+              <span id="network-gateway" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Subnet:</span>
+              <span id="network-subnet" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Signal Strength:</span>
+              <span id="network-signal" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">MAC Address:</span>
+              <span id="network-mac" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Channel:</span>
+              <span id="network-channel" class="value">-</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- WiFi Scanner -->
+        <section class="card">
+          <h2>📶 WiFi Scanner</h2>
+          <p>Scan for available WiFi networks in range.</p>
+          <button id="scan-wifi" class="btn btn-primary">
+            Start WiFi Scan
+          </button>
+          <div
+            id="scan-status"
+            style="margin-top: 10px; display: none"
+          ></div>
+          <div id="scan-results" class="scan-results"></div>
+        </section>
+
+        <!-- Ping Tool -->
+        <section class="card">
+          <h2>🏓 Ping Tool</h2>
+          <p>Test connectivity to a host.</p>
+          <div class="form-group">
+            <label for="ping-host">Host:</label>
+            <input
+              type="text"
+              id="ping-host"
+              placeholder="8.8.8.8 or google.com"
+              value="8.8.8.8"
+            />
+          </div>
+          <div class="form-group">
+            <label for="ping-count">Packet Count:</label>
+            <input type="number" id="ping-count" value="4" min="1" max="10" />
+          </div>
+          <button id="start-ping" class="btn btn-primary">Start Ping</button>
+          <div id="ping-results" class="ping-result" style="display: none"></div>
+        </section>
+
+        <!-- DNS Lookup -->
+        <section class="card">
+          <h2>🔍 DNS Lookup</h2>
+          <p>Resolve hostname to IP address.</p>
+          <div class="form-group">
+            <label for="dns-hostname">Hostname:</label>
+            <input
+              type="text"
+              id="dns-hostname"
+              placeholder="example.com"
+              value="google.com"
+            />
+          </div>
+          <button id="dns-lookup" class="btn btn-primary">Lookup</button>
+          <div
+            id="dns-results"
+            style="margin-top: 15px; display: none"
+          ></div>
+        </section>
+
+        <!-- Speed Test -->
+        <section class="card">
+          <h2>⚡ Network Speed Test</h2>
+          <p>Test network latency and throughput.</p>
+          <button id="speed-test" class="btn btn-primary">
+            Run Speed Test
+          </button>
+          <div id="speed-results" style="margin-top: 15px; display: none">
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="label">Latency:</span>
+                <span id="speed-latency" class="value">-</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Download Speed:</span>
+                <span id="speed-download" class="value">-</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Upload Speed:</span>
+                <span id="speed-upload" class="value">-</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Network Statistics -->
+        <section class="card">
+          <h2>📊 Network Statistics</h2>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Packets Sent:</span>
+              <span id="stat-packets-sent" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Packets Received:</span>
+              <span id="stat-packets-received" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Bytes Sent:</span>
+              <span id="stat-bytes-sent" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Bytes Received:</span>
+              <span id="stat-bytes-received" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Connection Drops:</span>
+              <span id="stat-drops" class="value">-</span>
+            </div>
+            <div class="info-item">
+              <span class="label">Reconnections:</span>
+              <span id="stat-reconnects" class="value">-</span>
+            </div>
+          </div>
+          <button id="refresh-stats" class="btn btn-primary" style="margin-top: 15px">
+            Refresh Statistics
+          </button>
+        </section>
+      </main>
+
+      <footer>
+        <p>
+          &copy; 2024 Audio Streamer |
+          <a href="https://github.com/sarpel/audio-streamer-xiao">GitHub</a>
+        </p>
+      </footer>
+    </div>
+
+    <script src="/js/utils.js"></script>
+    <script src="/js/network.js"></script>
+  </body>
+</html>

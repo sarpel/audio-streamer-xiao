@@ -5,3 +5,10 @@
 .vscode/ipch
 build/
 .vscode/
+colorize.py
+launch-esp-idf.bat
+launch-esp-idf.ps1
+launch-esp-idf.sh
+.clangd
+claudedocs/
+

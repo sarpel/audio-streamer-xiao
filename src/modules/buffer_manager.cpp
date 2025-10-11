@@ -8,6 +8,9 @@
 
 static const char* TAG = "BUFFER_MANAGER";
 
+// Mutex timeout constant (5 seconds) to prevent deadlocks
+#define BUFFER_MUTEX_TIMEOUT_MS 5000
+
 static int32_t* ring_buffer = NULL;
 static size_t buffer_size_samples = 0;
 static size_t read_index = 0;
@@ -95,7 +98,10 @@ size_t buffer_manager_read(int32_t* data, size_t samples) {
         return 0;
     }
 
-    xSemaphoreTake(buffer_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(BUFFER_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "Mutex timeout in read");
+        return 0;
+    }
 
     size_t samples_to_read = (samples > available_samples) ? available_samples : samples;
 
@@ -113,28 +119,40 @@ size_t buffer_manager_read(int32_t* data, size_t samples) {
 }
 
 size_t buffer_manager_available(void) {
-    xSemaphoreTake(buffer_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(BUFFER_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "Mutex timeout in available");
+        return 0;
+    }
     size_t avail = available_samples;
     xSemaphoreGive(buffer_mutex);
     return avail;
 }
 
 size_t buffer_manager_free_space(void) {
-    xSemaphoreTake(buffer_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(BUFFER_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "Mutex timeout in free_space");
+        return 0;
+    }
     size_t free_space = buffer_size_samples - available_samples;
     xSemaphoreGive(buffer_mutex);
     return free_space;
 }
 
 uint8_t buffer_manager_usage_percent(void) {
-    xSemaphoreTake(buffer_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(BUFFER_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "Mutex timeout in usage_percent");
+        return 0;
+    }
     uint8_t usage = (available_samples * 100) / buffer_size_samples;
     xSemaphoreGive(buffer_mutex);
     return usage;
 }
 
 bool buffer_manager_check_overflow(void) {
-    xSemaphoreTake(buffer_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(BUFFER_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "Mutex timeout in check_overflow");
+        return false;
+    }
     bool overflow = overflow_occurred;
     overflow_occurred = false;  // Reset flag after reading
     xSemaphoreGive(buffer_mutex);
@@ -142,7 +160,10 @@ bool buffer_manager_check_overflow(void) {
 }
 
 void buffer_manager_reset(void) {
-    xSemaphoreTake(buffer_mutex, portMAX_DELAY);
+    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(BUFFER_MUTEX_TIMEOUT_MS)) != pdTRUE) {
+        ESP_LOGE(TAG, "Mutex timeout in reset");
+        return;
+    }
     read_index = 0;
     write_index = 0;
     available_samples = 0;
