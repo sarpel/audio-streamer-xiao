@@ -1,8 +1,11 @@
 #include "ota_handler.h"
+#include "web_server.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_http_server.h"
 #include "esp_system.h"
+#include "esp_app_format.h"
+#include "cJSON.h"
 #include <string.h>
 
 static const char *TAG = "OTA_HANDLER";
@@ -34,6 +37,15 @@ int ota_handler_get_progress(void)
 // POST /api/ota/upload - Handle OTA firmware upload
 static esp_err_t ota_upload_handler(httpd_req_t *req)
 {
+    // Check authentication first
+    if (!web_server_check_auth(req))
+    {
+        return web_server_send_auth_required(req);
+    }
+
+    // Add CORS headers for successful auth
+    web_server_add_cors_headers(req);
+
     esp_err_t ret = ESP_OK;
     char buf[1024];
     int received;
@@ -134,25 +146,73 @@ static esp_err_t ota_upload_handler(httpd_req_t *req)
 // GET /api/ota/status - Get OTA status and progress
 static esp_err_t ota_status_handler(httpd_req_t *req)
 {
-    char response[256];
+    // Check authentication
+    if (!web_server_check_auth(req))
+    {
+        return web_server_send_auth_required(req);
+    }
+
+    cJSON *root = cJSON_CreateObject();
+
+    // Get current partition info
     const esp_partition_t *running = esp_ota_get_running_partition();
     const esp_partition_t *boot = esp_ota_get_boot_partition();
+    const esp_partition_t *update = esp_ota_get_next_update_partition(NULL);
 
-    snprintf(response, sizeof(response),
-             "{\"in_progress\":%s,\"progress\":%d,\"running_partition\":\"%s\",\"boot_partition\":\"%s\"}",
-             ota_in_progress ? "true" : "false",
-             ota_handler_get_progress(),
-             running->label,
-             boot->label);
+    cJSON_AddBoolToObject(root, "in_progress", ota_in_progress);
+    cJSON_AddNumberToObject(root, "progress", ota_handler_get_progress());
+    cJSON_AddStringToObject(root, "running_partition", running->label);
+    cJSON_AddStringToObject(root, "boot_partition", boot->label);
 
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, response);
-    return ESP_OK;
+    if (update != NULL)
+    {
+        cJSON_AddStringToObject(root, "update_partition", update->label);
+    }
+
+    // Get app description
+    esp_app_desc_t app_desc;
+    if (esp_ota_get_partition_description(running, &app_desc) == ESP_OK)
+    {
+        cJSON_AddStringToObject(root, "version", app_desc.version);
+        cJSON_AddStringToObject(root, "project_name", app_desc.project_name);
+        cJSON_AddStringToObject(root, "compile_time", app_desc.time);
+        cJSON_AddStringToObject(root, "compile_date", app_desc.date);
+        cJSON_AddStringToObject(root, "idf_version", app_desc.idf_ver);
+    }
+
+    // Check if we're in a pending verify state
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK)
+    {
+        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY)
+        {
+            cJSON_AddStringToObject(root, "status", "pending_verify");
+            cJSON_AddBoolToObject(root, "pending_verify", true);
+        }
+        else
+        {
+            cJSON_AddStringToObject(root, "status", "valid");
+            cJSON_AddBoolToObject(root, "pending_verify", false);
+        }
+    }
+
+    esp_err_t ret = web_server_send_json_response(req, root, 200);
+    cJSON_Delete(root);
+    return ret;
 }
 
 // POST /api/ota/rollback - Rollback to previous partition
 static esp_err_t ota_rollback_handler(httpd_req_t *req)
 {
+    // Check authentication first
+    if (!web_server_check_auth(req))
+    {
+        return web_server_send_auth_required(req);
+    }
+
+    // Add CORS headers for successful auth
+    web_server_add_cors_headers(req);
+
     const esp_partition_t *last_invalid = esp_ota_get_last_invalid_partition();
 
     if (last_invalid != NULL)
@@ -185,6 +245,8 @@ bool ota_handler_register_endpoints(httpd_handle_t server)
         return false;
     }
 
+    ESP_LOGI(TAG, "Registering OTA endpoints...");
+
     // POST /api/ota/upload
     httpd_uri_t ota_upload_uri = {
         .uri = "/api/ota/upload",
@@ -194,7 +256,8 @@ bool ota_handler_register_endpoints(httpd_handle_t server)
         .is_websocket = false,
         .handle_ws_control_frames = false,
         .supported_subprotocol = NULL};
-    httpd_register_uri_handler(server, &ota_upload_uri);
+    esp_err_t ret = httpd_register_uri_handler(server, &ota_upload_uri);
+    ESP_LOGI(TAG, "Registered /api/ota/upload: %s", ret == ESP_OK ? "SUCCESS" : "FAILED");
 
     // GET /api/ota/status
     httpd_uri_t ota_status_uri = {
@@ -205,7 +268,8 @@ bool ota_handler_register_endpoints(httpd_handle_t server)
         .is_websocket = false,
         .handle_ws_control_frames = false,
         .supported_subprotocol = NULL};
-    httpd_register_uri_handler(server, &ota_status_uri);
+    ret = httpd_register_uri_handler(server, &ota_status_uri);
+    ESP_LOGI(TAG, "Registered /api/ota/status: %s", ret == ESP_OK ? "SUCCESS" : "FAILED");
 
     // POST /api/ota/rollback
     httpd_uri_t ota_rollback_uri = {
@@ -216,7 +280,8 @@ bool ota_handler_register_endpoints(httpd_handle_t server)
         .is_websocket = false,
         .handle_ws_control_frames = false,
         .supported_subprotocol = NULL};
-    httpd_register_uri_handler(server, &ota_rollback_uri);
+    ret = httpd_register_uri_handler(server, &ota_rollback_uri);
+    ESP_LOGI(TAG, "Registered /api/ota/rollback: %s", ret == ESP_OK ? "SUCCESS" : "FAILED");
 
     ESP_LOGI(TAG, "OTA endpoints registered");
     return true;

@@ -103,9 +103,9 @@ async function handleFormSubmit(formId, apiCall, successMessage) {
 
 // ===== Authentication Helper Functions =====
 
-// Default credentials (should be changed on first login in production)
-const DEFAULT_USERNAME = "admin";
-const DEFAULT_PASSWORD = "penguen1988";
+// Default credentials - will prompt for real credentials on 401
+const DEFAULT_USERNAME = "";
+const DEFAULT_PASSWORD = "";
 
 function getStoredUsername() {
   return localStorage.getItem("auth_username") || DEFAULT_USERNAME;
@@ -129,32 +129,30 @@ function clearCredentials() {
 async function fetchWithAuth(url, options = {}) {
   const username = getStoredUsername();
   const password = getStoredPassword();
-  const auth = btoa(`${username}:${password}`);
-
-  const defaultOptions = {
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/json",
-    },
+  
+  // Only add Authorization header if we have credentials
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
   };
+  
+  if (username && password) {
+    const auth = btoa(`${username}:${password}`);
+    headers.Authorization = `Basic ${auth}`;
+  }
 
   const mergedOptions = {
-    ...defaultOptions,
     ...options,
-    headers: {
-      ...defaultOptions.headers,
-      ...(options.headers || {}),
-    },
+    headers: headers,
   };
 
   try {
     const response = await fetch(url, mergedOptions);
 
     if (response.status === 401) {
-      // Authentication failed
-      showAlert("Authentication failed. Please check credentials.", "error");
-      // Optionally redirect to login page
-      throw new Error("Authentication failed");
+      // Authentication required - browser will show native auth dialog
+      // For now, just throw an error
+      throw new Error("Authentication required. Please refresh the page and enter your credentials.");
     }
 
     if (!response.ok) {
