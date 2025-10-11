@@ -18,7 +18,6 @@ static size_t written_size = 0;
 
 bool ota_handler_init(void)
 {
-    ESP_LOGI(TAG, "OTA handler initialized");
     return true;
 }
 
@@ -50,7 +49,6 @@ static esp_err_t ota_upload_handler(httpd_req_t *req)
     char buf[1024];
     int received;
 
-    ESP_LOGI(TAG, "OTA upload started");
     ota_in_progress = true;
     written_size = 0;
     total_size = req->content_len;
@@ -91,13 +89,6 @@ static esp_err_t ota_upload_handler(httpd_req_t *req)
             return ESP_FAIL;
         }
         written_size += received;
-
-        // Log progress
-        if (written_size % (100 * 1024) == 0)
-        {
-            ESP_LOGI(TAG, "Written %zu of %zu bytes (%d%%)",
-                     written_size, total_size, ota_handler_get_progress());
-        }
     }
 
     if (received < 0)
@@ -129,8 +120,11 @@ static esp_err_t ota_upload_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "OTA update successful! Total: %zu bytes", written_size);
-    ota_in_progress = false;
+    if (ret == ESP_OK)
+    {
+        ESP_LOGI(TAG, "OTA update successful! Total: %zu bytes", written_size);
+        esp_restart();
+    }
 
     // Send success response
     httpd_resp_set_type(req, "application/json");
@@ -239,14 +233,6 @@ static esp_err_t ota_rollback_handler(httpd_req_t *req)
 
 bool ota_handler_register_endpoints(httpd_handle_t server)
 {
-    if (!server)
-    {
-        ESP_LOGE(TAG, "Invalid server handle");
-        return false;
-    }
-
-    ESP_LOGI(TAG, "Registering OTA endpoints...");
-
     // POST /api/ota/upload
     httpd_uri_t ota_upload_uri = {
         .uri = "/api/ota/upload",
@@ -257,7 +243,11 @@ bool ota_handler_register_endpoints(httpd_handle_t server)
         .handle_ws_control_frames = false,
         .supported_subprotocol = NULL};
     esp_err_t ret = httpd_register_uri_handler(server, &ota_upload_uri);
-    ESP_LOGI(TAG, "Registered /api/ota/upload: %s", ret == ESP_OK ? "SUCCESS" : "FAILED");
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to register OTA upload endpoint: %s", esp_err_to_name(ret));
+        return false;
+    }
 
     // GET /api/ota/status
     httpd_uri_t ota_status_uri = {
@@ -269,7 +259,11 @@ bool ota_handler_register_endpoints(httpd_handle_t server)
         .handle_ws_control_frames = false,
         .supported_subprotocol = NULL};
     ret = httpd_register_uri_handler(server, &ota_status_uri);
-    ESP_LOGI(TAG, "Registered /api/ota/status: %s", ret == ESP_OK ? "SUCCESS" : "FAILED");
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to register OTA status endpoint: %s", esp_err_to_name(ret));
+        return false;
+    }
 
     // POST /api/ota/rollback
     httpd_uri_t ota_rollback_uri = {
@@ -281,9 +275,12 @@ bool ota_handler_register_endpoints(httpd_handle_t server)
         .handle_ws_control_frames = false,
         .supported_subprotocol = NULL};
     ret = httpd_register_uri_handler(server, &ota_rollback_uri);
-    ESP_LOGI(TAG, "Registered /api/ota/rollback: %s", ret == ESP_OK ? "SUCCESS" : "FAILED");
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Failed to register OTA rollback endpoint: %s", esp_err_to_name(ret));
+        return false;
+    }
 
-    ESP_LOGI(TAG, "OTA endpoints registered");
     return true;
 }
 
@@ -294,5 +291,4 @@ void ota_handler_deinit(void)
         esp_ota_abort(ota_handle);
         ota_in_progress = false;
     }
-    ESP_LOGI(TAG, "OTA handler deinitialized");
 }

@@ -16,5 +16,39 @@ managed_components/
 .vscode/
 .clangd
 
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Build artifacts
+*.bin
+*.elf
+*.map
+*.hex
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Node.js (if any)
+node_modules/
+npm-debug.log*
+
+# Configuration files with sensitive data
+config.local.h
+secrets.h
+wifi_credentials.h
+
 # Documentation
 claudedocs/

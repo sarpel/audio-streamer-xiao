@@ -177,12 +177,10 @@ static void tcp_sender_task(void *arg)
                 ESP_LOGE(TAG, "TCP send failed (attempt %lu/%d)",
                          reconnect_attempts, MAX_RECONNECT_ATTEMPTS);
 
-                ESP_LOGI(TAG, "Waiting %lums before reconnect...", reconnect_backoff_ms);
                 vTaskDelay(pdMS_TO_TICKS(reconnect_backoff_ms));
 
                 if (tcp_streamer_reconnect())
                 {
-                    ESP_LOGI(TAG, "TCP reconnected successfully");
                     consecutive_tcp_failures = 0;
                     reconnect_backoff_ms = RECONNECT_BACKOFF_MS;
                     reconnect_attempts = 0;
@@ -260,14 +258,12 @@ static void watchdog_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(2000)); // Wait for WiFi to stabilize
             if (network_manager_is_connected())
             {
-                ESP_LOGI(TAG, "WiFi recovered, reconnecting TCP...");
                 tcp_streamer_reconnect();
             }
         }
         else if (!wifi_connected)
         {
             // Still disconnected, keep trying
-            ESP_LOGW(TAG, "WiFi still disconnected");
             network_manager_reconnect();
         }
 
@@ -298,94 +294,20 @@ static void watchdog_task(void *arg)
         // Log statistics every 10 seconds
         if (++log_counter >= 10)
         {
+            log_counter = 0;
+
+            // Only log essential stats
             uint64_t bytes_sent;
             uint32_t reconnects;
             tcp_streamer_get_stats(&bytes_sent, &reconnects);
 
             ESP_LOGI(TAG, "B:%llu R:%u OF:%lu", bytes_sent, reconnects, buffer_overflow_count);
 
-            // Memory monitoring
+            // Memory monitoring - only warn on low memory
             size_t free_heap = esp_get_free_heap_size();
-            size_t min_free_heap = esp_get_minimum_free_heap_size();
-
             if (free_heap < 20480) // Warn if < 20KB free
             {
-                ESP_LOGW(TAG, "LOW MEMORY: %zu bytes free (min: %zu)", free_heap, min_free_heap);
-            }
-            else
-            {
-                ESP_LOGD(TAG, "Heap: %zu bytes free (min: %zu)", free_heap, min_free_heap);
-            }
-
-            // Task CPU usage profiling (requires CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y)
-#if configGENERATE_RUN_TIME_STATS
-            TaskStatus_t task_status[10];
-            UBaseType_t task_count = uxTaskGetNumberOfTasks();
-            uint32_t total_runtime;
-
-            if (task_count <= 10)
-            {
-                task_count = uxTaskGetSystemState(task_status, task_count, &total_runtime);
-
-                ESP_LOGI(TAG, "--- Task CPU Usage ---");
-                for (UBaseType_t i = 0; i < task_count; i++)
-                {
-                    uint32_t cpu_percent = 0;
-                    if (total_runtime > 0)
-                    {
-                        cpu_percent = (task_status[i].ulRunTimeCounter * 100UL) / total_runtime;
-                    }
-
-                    if (cpu_percent > 5) // Only log tasks using >5% CPU
-                    {
-                        ESP_LOGI(TAG, "  %s: %lu%% (prio=%u, core=%d)",
-                                 task_status[i].pcTaskName,
-                                 cpu_percent,
-                                 (unsigned int)task_status[i].uxCurrentPriority,
-                                 (int)xTaskGetCoreID(task_status[i].xHandle));
-                    }
-                }
-            }
-#else
-            ESP_LOGD(TAG, "CPU profiling disabled (enable CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS)");
-#endif
-
-#if ENABLE_STACK_MONITORING
-            // Check stack usage for all tasks
-            if (i2s_reader_task_handle != NULL)
-            {
-                UBaseType_t i2s_stack = uxTaskGetStackHighWaterMark(i2s_reader_task_handle);
-                if (i2s_stack < MIN_STACK_WATERMARK)
-                {
-                    ESP_LOGW(TAG, "⚠️ I2S task low stack: %u bytes free", i2s_stack);
-                }
-            }
-
-            if (tcp_sender_task_handle != NULL)
-            {
-                UBaseType_t tcp_stack = uxTaskGetStackHighWaterMark(tcp_sender_task_handle);
-                if (tcp_stack < MIN_STACK_WATERMARK)
-                {
-                    ESP_LOGW(TAG, "⚠️ TCP task low stack: %u bytes free", tcp_stack);
-                }
-            }
-
-            if (watchdog_task_handle != NULL)
-            {
-                UBaseType_t wd_stack = uxTaskGetStackHighWaterMark(watchdog_task_handle);
-                if (wd_stack < MIN_STACK_WATERMARK / 2)
-                { // Lower threshold for watchdog
-                    ESP_LOGW(TAG, "⚠️ Watchdog low stack: %u bytes free", wd_stack);
-                }
-            }
-#endif
-
-            log_counter = 0;
-
-            // Reset overflow counter after cooldown
-            if ((now - last_overflow_time) > pdMS_TO_TICKS(OVERFLOW_COOLDOWN_MS))
-            {
-                buffer_overflow_count = 0;
+                ESP_LOGW(TAG, "LOW MEMORY: %zu bytes free", free_heap);
             }
         }
 
@@ -451,7 +373,6 @@ extern "C" void app_main(void)
 
     if (config_manager_is_first_boot())
     {
-        ESP_LOGI(TAG, "First boot detected - using default configuration");
         config_manager_save(); // Save defaults to NVS
     }
 
@@ -459,15 +380,10 @@ extern "C" void app_main(void)
     // Check if first boot and try captive portal
     if (config_manager_is_first_boot() || !captive_portal_is_configured())
     {
-        ESP_LOGI(TAG, "Starting captive portal for initial setup...");
         if (captive_portal_init())
         {
-            ESP_LOGI(TAG, "Captive portal active. Connect to '%s' to configure.", CAPTIVE_PORTAL_SSID);
-
-            // Initialize web server for configuration in AP mode
             if (web_server_init())
             {
-                ESP_LOGI(TAG, "Web configuration available at http://192.168.4.1");
             }
 
             // Wait for configuration (timeout after CAPTIVE_PORTAL_TIMEOUT_SEC)
@@ -482,7 +398,6 @@ extern "C" void app_main(void)
                 // Check if configuration was saved
                 if (captive_portal_is_configured())
                 {
-                    ESP_LOGI(TAG, "Configuration received, stopping captive portal");
                     break;
                 }
             }
@@ -496,7 +411,6 @@ extern "C" void app_main(void)
             }
             else
             {
-                ESP_LOGI(TAG, "Configuration complete, rebooting to apply...");
                 vTaskDelay(pdMS_TO_TICKS(2000));
                 esp_restart();
             }
@@ -505,7 +419,6 @@ extern "C" void app_main(void)
 
     esp_task_wdt_reset();
     // Initialize components with error handling
-    ESP_LOGI(TAG, "Initializing WiFi...");
     if (!network_manager_init())
     {
         ESP_LOGE(TAG, "CRITICAL: WiFi init failed, rebooting in 5 seconds...");
@@ -513,18 +426,11 @@ extern "C" void app_main(void)
         esp_restart();
     }
 
-    ESP_LOGI("MAIN", "Free heap: %lu bytes", esp_get_free_heap_size());
-    ESP_LOGI("MAIN", "Largest free block: %lu bytes",
-             heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-
-    ESP_LOGI(TAG, "Initializing mDNS...");
     network_manager_init_mdns(); // Non-critical, continue if fails
 
-    ESP_LOGI(TAG, "Initializing NTP...");
     network_manager_init_ntp();
 
     // Initialize web server
-    ESP_LOGI(TAG, "Initializing web server...");
     if (!web_server_init())
     {
         ESP_LOGW(TAG, "Web server init failed, continuing without web UI");
@@ -534,7 +440,6 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "Web UI available at http://audiostreamer.local or device IP");
     }
 
-    ESP_LOGI(TAG, "Initializing ring buffer...");
     if (!buffer_manager_init(RING_BUFFER_SIZE))
     {
         ESP_LOGE(TAG, "CRITICAL: Buffer init failed, rebooting...");
@@ -543,7 +448,6 @@ extern "C" void app_main(void)
     }
 
     esp_task_wdt_reset();
-    ESP_LOGI(TAG, "Initializing I2S...");
     if (!i2s_handler_init())
     {
         ESP_LOGE(TAG, "CRITICAL: I2S init failed, rebooting...");
@@ -552,7 +456,6 @@ extern "C" void app_main(void)
     }
 
     esp_task_wdt_reset();
-    ESP_LOGI(TAG, "Connecting to TCP server...");
     if (!tcp_streamer_init())
     {
         ESP_LOGW(TAG, "Initial TCP connection failed, will retry in background");
@@ -563,7 +466,6 @@ extern "C" void app_main(void)
     tcp_sender_last_feed = xTaskGetTickCount();
 
     // Create tasks
-    ESP_LOGI(TAG, "Creating tasks...");
 
     BaseType_t result;
 
@@ -581,7 +483,6 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "CRITICAL: Failed to create I2S Reader task");
         esp_restart();
     }
-    ESP_LOGI(TAG, "I2S Reader task created");
 
     esp_task_wdt_reset();
     result = xTaskCreatePinnedToCore(
@@ -597,7 +498,6 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "CRITICAL: Failed to create TCP Sender task");
         esp_restart();
     }
-    ESP_LOGI(TAG, "TCP Sender task created");
 
     esp_task_wdt_reset();
     result = xTaskCreatePinnedToCore(
@@ -613,7 +513,6 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "CRITICAL: Failed to create Watchdog task");
         esp_restart();
     }
-    ESP_LOGI(TAG, "Watchdog task created");
 
     ESP_LOGI(TAG, "=== Audio Streamer Running ===");
 

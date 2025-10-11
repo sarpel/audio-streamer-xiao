@@ -65,7 +65,7 @@
 #define WATCHDOG_CORE 0   // Low priority, share with WiFi/TCP
 
 // Watchdog Configuration
-#define WATCHDOG_TIMEOUT_SEC 60
+#define WATCHDOG_TIMEOUT_SEC 30
 #define NTP_RESYNC_INTERVAL_SEC 3600 // 1 hour
 
 // Debug Configuration
@@ -85,10 +85,6 @@
 #define WIFI_CONNECT_MAX_RETRIES 20 // Max WiFi connection attempts
 #define TCP_CONNECT_MAX_RETRIES 5   // Max TCP connection attempts per cycle
 
-// Stack Monitoring
-#define ENABLE_STACK_MONITORING 1 // Monitor stack usage
-#define MIN_STACK_WATERMARK 512   // Warn if stack < 512 bytes free
-
 // ✅ Add these safety limits
 #define MUTEX_TIMEOUT_MS 5000   // Max wait for mutex
 #define MAX_WIFI_DISCONNECTS 20 // Reboot after this many
@@ -97,5 +93,11 @@
 #define ENABLE_AUTO_REBOOT 1  // Reboot on critical failures
 #define ENABLE_I2S_REINIT 1   // Reinitialize I2S on persistent failures
 #define ENABLE_BUFFER_DRAIN 1 // Force drain buffer on overflow
+
+// Timeout Configuration
+#define I2S_READ_TIMEOUT_MS 5000    // I2S read operation timeout
+#define TCP_SEND_TIMEOUT_MS 5000    // TCP send operation timeout
+#define BUFFER_WAIT_TIMEOUT_MS 2000 // Max wait for buffer data
+#define BUFFER_WAIT_DELAY_MS 20     // Delay between buffer checks
 
 #endif // CONFIG_H

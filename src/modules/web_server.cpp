@@ -1048,7 +1048,6 @@ static esp_err_t api_get_debug_handler(httpd_req_t *req)
 
     cJSON *root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "debug_enabled", debug.debug_enabled);
-    cJSON_AddBoolToObject(root, "stack_monitoring", debug.stack_monitoring);
     cJSON_AddBoolToObject(root, "auto_reboot", debug.auto_reboot);
     cJSON_AddBoolToObject(root, "i2s_reinit", debug.i2s_reinit);
     cJSON_AddBoolToObject(root, "buffer_drain", debug.buffer_drain);
@@ -1086,12 +1085,6 @@ static esp_err_t api_post_debug_handler(httpd_req_t *req)
     if (debug_enabled && cJSON_IsBool(debug_enabled))
     {
         debug.debug_enabled = cJSON_IsTrue(debug_enabled);
-    }
-
-    cJSON *stack_monitoring = cJSON_GetObjectItem(root, "stack_monitoring");
-    if (stack_monitoring && cJSON_IsBool(stack_monitoring))
-    {
-        debug.stack_monitoring = cJSON_IsTrue(stack_monitoring);
     }
 
     cJSON *auto_reboot = cJSON_GetObjectItem(root, "auto_reboot");
@@ -1224,7 +1217,6 @@ static esp_err_t api_get_all_config_handler(httpd_req_t *req)
     {
         cJSON *debug_obj = cJSON_CreateObject();
         cJSON_AddBoolToObject(debug_obj, "debug_enabled", debug.debug_enabled);
-        cJSON_AddBoolToObject(debug_obj, "stack_monitoring", debug.stack_monitoring);
         cJSON_AddBoolToObject(debug_obj, "auto_reboot", debug.auto_reboot);
         cJSON_AddBoolToObject(debug_obj, "i2s_reinit", debug.i2s_reinit);
         cJSON_AddBoolToObject(debug_obj, "buffer_drain", debug.buffer_drain);
@@ -1511,8 +1503,6 @@ bool web_server_init(void)
     config.lru_purge_enable = true;
     config.stack_size = 8192;
 
-    ESP_LOGI(TAG, "Starting web server on port %d", config.server_port);
-
     if (httpd_start(&server, &config) != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to start web server");
@@ -1589,7 +1579,6 @@ bool web_server_init(void)
     // Register 404 handler (must be last)
     httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, notfound_handler);
 
-    ESP_LOGI(TAG, "Web server started successfully with %zu endpoints", sizeof(endpoints) / sizeof(endpoints[0]));
     return true;
 }
 

@@ -77,7 +77,6 @@ static void load_defaults(void)
 
     // Debug defaults
     debug_config.debug_enabled = DEBUG_ENABLED;
-    debug_config.stack_monitoring = ENABLE_STACK_MONITORING;
     debug_config.auto_reboot = ENABLE_AUTO_REBOOT;
     debug_config.i2s_reinit = ENABLE_I2S_REINIT;
     debug_config.buffer_drain = ENABLE_BUFFER_DRAIN;
