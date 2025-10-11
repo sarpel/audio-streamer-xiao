@@ -42,6 +42,17 @@ static bool tcp_connect(void) {
     setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepinterval, sizeof(keepinterval));
     setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepcount, sizeof(keepcount));
 
+    // Disable Nagle algorithm for low latency
+    int nodelay = 1;
+    if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay)) != 0)
+    {
+        ESP_LOGW(TAG, "Failed to set TCP_NODELAY: errno %d", errno);
+    }
+    else
+    {
+        ESP_LOGI(TAG, "TCP_NODELAY enabled for low latency");
+    }
+
     // Set send timeout
     struct timeval timeout;
     timeout.tv_sec = 5;

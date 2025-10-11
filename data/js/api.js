@@ -3,20 +3,36 @@
 const API = {
   baseUrl: "",
 
-  // Helper to make API requests
+  // Helper to get Basic Auth header
+  getAuthHeader() {
+    const username = localStorage.getItem("auth_username") || "sarpel";
+    const password = localStorage.getItem("auth_password") || "13524678";
+    const auth = btoa(`${username}:${password}`);
+    return `Basic ${auth}`;
+  },
+
+  // Helper to make API requests with authentication
   async request(endpoint, options = {}) {
     const url = `${this.baseUrl}${endpoint}`;
     const defaultOptions = {
       headers: {
         "Content-Type": "application/json",
+        Authorization: this.getAuthHeader(),
       },
     };
 
     try {
       const response = await fetch(url, { ...defaultOptions, ...options });
+
+      if (response.status === 401) {
+        console.error("Authentication failed");
+        throw new Error("Authentication required. Please check credentials.");
+      }
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+
       return await response.json();
     } catch (error) {
       console.error("API request failed:", error);

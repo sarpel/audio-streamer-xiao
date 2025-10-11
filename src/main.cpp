@@ -135,8 +135,8 @@ static void tcp_sender_task(void *arg)
 
     // ✅ FIX: Use stack-allocated buffer instead of heap allocation
     // This avoids OOM crashes from 65KB malloc that was failing
-    const size_t send_samples = 4096;  // Reduced from 16384 to fit on stack
-    static int32_t send_buffer[4096];  // Static allocation in .bss section
+    const size_t send_samples = 4096; // Reduced from 16384 to fit on stack
+    static int32_t send_buffer[4096]; // Static allocation in .bss section
 
     ESP_LOGI(TAG, "Using stack-allocated send buffer (%zu samples)", send_samples);
 
@@ -304,7 +304,52 @@ static void watchdog_task(void *arg)
 
             ESP_LOGI(TAG, "B:%llu R:%u OF:%lu", bytes_sent, reconnects, buffer_overflow_count);
 
-// ✅ #7 BURAYA EKLE - Stack Monitoring
+            // Memory monitoring
+            size_t free_heap = esp_get_free_heap_size();
+            size_t min_free_heap = esp_get_minimum_free_heap_size();
+
+            if (free_heap < 20480) // Warn if < 20KB free
+            {
+                ESP_LOGW(TAG, "LOW MEMORY: %zu bytes free (min: %zu)", free_heap, min_free_heap);
+            }
+            else
+            {
+                ESP_LOGD(TAG, "Heap: %zu bytes free (min: %zu)", free_heap, min_free_heap);
+            }
+
+            // Task CPU usage profiling (requires CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y)
+#if configGENERATE_RUN_TIME_STATS
+            TaskStatus_t task_status[10];
+            UBaseType_t task_count = uxTaskGetNumberOfTasks();
+            uint32_t total_runtime;
+
+            if (task_count <= 10)
+            {
+                task_count = uxTaskGetSystemState(task_status, task_count, &total_runtime);
+
+                ESP_LOGI(TAG, "--- Task CPU Usage ---");
+                for (UBaseType_t i = 0; i < task_count; i++)
+                {
+                    uint32_t cpu_percent = 0;
+                    if (total_runtime > 0)
+                    {
+                        cpu_percent = (task_status[i].ulRunTimeCounter * 100UL) / total_runtime;
+                    }
+
+                    if (cpu_percent > 5) // Only log tasks using >5% CPU
+                    {
+                        ESP_LOGI(TAG, "  %s: %lu%% (prio=%u, core=%d)",
+                                 task_status[i].pcTaskName,
+                                 cpu_percent,
+                                 (unsigned int)task_status[i].uxCurrentPriority,
+                                 (int)xTaskGetCoreID(task_status[i].xHandle));
+                    }
+                }
+            }
+#else
+            ESP_LOGD(TAG, "CPU profiling disabled (enable CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS)");
+#endif
+
 #if ENABLE_STACK_MONITORING
             // Check stack usage for all tasks
             if (i2s_reader_task_handle != NULL)
@@ -368,6 +413,7 @@ extern "C" void app_main(void)
     // ✅ Subscribe app_main to watchdog
     esp_task_wdt_add(xTaskGetCurrentTaskHandle());
 
+    esp_task_wdt_reset();
     // Initialize NVS flash (required for config manager)
     ESP_LOGI(TAG, "Initializing NVS flash...");
     esp_err_t ret = nvs_flash_init();
@@ -385,6 +431,7 @@ extern "C" void app_main(void)
     }
     ESP_LOGI(TAG, "NVS flash initialized successfully");
 
+    esp_task_wdt_reset();
     // Initialize configuration manager
     ESP_LOGI(TAG, "Initializing configuration manager...");
     if (!config_manager_init())
@@ -408,12 +455,7 @@ extern "C" void app_main(void)
         config_manager_save(); // Save defaults to NVS
     }
 
-    // ✅ REMOVE: Don't manually configure watchdog
-    // The system will handle it automatically
-    // esp_task_wdt_config_t wdt_config = {...}
-    // esp_task_wdt_init(&wdt_config);
-    // esp_task_wdt_add(NULL);
-
+    esp_task_wdt_reset();
     // Check if first boot and try captive portal
     if (config_manager_is_first_boot() || !captive_portal_is_configured())
     {
@@ -461,6 +503,7 @@ extern "C" void app_main(void)
         }
     }
 
+    esp_task_wdt_reset();
     // Initialize components with error handling
     ESP_LOGI(TAG, "Initializing WiFi...");
     if (!network_manager_init())
@@ -499,6 +542,7 @@ extern "C" void app_main(void)
         esp_restart();
     }
 
+    esp_task_wdt_reset();
     ESP_LOGI(TAG, "Initializing I2S...");
     if (!i2s_handler_init())
     {
@@ -507,6 +551,7 @@ extern "C" void app_main(void)
         esp_restart();
     }
 
+    esp_task_wdt_reset();
     ESP_LOGI(TAG, "Connecting to TCP server...");
     if (!tcp_streamer_init())
     {
@@ -522,6 +567,7 @@ extern "C" void app_main(void)
 
     BaseType_t result;
 
+    esp_task_wdt_reset();
     result = xTaskCreatePinnedToCore(
         i2s_reader_task,
         "I2S_Reader",
@@ -537,6 +583,7 @@ extern "C" void app_main(void)
     }
     ESP_LOGI(TAG, "I2S Reader task created");
 
+    esp_task_wdt_reset();
     result = xTaskCreatePinnedToCore(
         tcp_sender_task,
         "TCP_Sender",
@@ -552,6 +599,7 @@ extern "C" void app_main(void)
     }
     ESP_LOGI(TAG, "TCP Sender task created");
 
+    esp_task_wdt_reset();
     result = xTaskCreatePinnedToCore(
         watchdog_task,
         "Watchdog",

@@ -71,7 +71,7 @@ I2S DMA (8 buffers × 512 samples = 32ms buffering)
     ↓
 i2s_handler_read() → 32-bit containers from DMA
     ↓
-Ring Buffer (96KB SRAM = ~6 seconds audio buffering)
+Ring Buffer (96KB SRAM = ~3 seconds audio buffering)
     ↓ mutex-protected read/write with 5s timeout
 buffer_manager_read() → extract samples
     ↓

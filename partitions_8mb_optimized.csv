@@ -1,0 +1,11 @@
+# ESP32-S3 8MB Flash Partition Table - Optimized for OTA + Web Server
+# Name,     Type, SubType,  Offset,   Size,     Flags
+# Bootloader uses first 0x8000 (32KB)
+# Partition table at 0x8000 (32KB)
+nvs,        data, nvs,      0x9000,   24K,
+otadata,    data, ota,      0xf000,   8K,
+phy_init,   data, phy,      0x11000,  4K,
+ota_0,      app,  ota_0,    0x20000,  3200K,
+ota_1,      app,  ota_1,    ,         3200K,
+nvs_keys,   data, nvs_keys, ,         4K,
+coredump,   data, coredump, ,         64K,

@@ -1,0 +1,9 @@
+## IDF Component Manager Manifest
+## This file declares dependencies for the main component
+
+dependencies:
+  idf:
+    version: ">=5.0.0"
+  espressif/libsodium:
+    version: "*"
+    require: no

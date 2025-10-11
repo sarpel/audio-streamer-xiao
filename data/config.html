@@ -34,11 +34,11 @@
           <form id="wifi-form">
             <div class="form-group">
               <label for="wifi-ssid">SSID:</label>
-              <input type="text" id="wifi-ssid" required />
+              <input type="text" id="wifi-ssid" value="Sarpel_2G" required />
             </div>
             <div class="form-group">
               <label for="wifi-password">Password:</label>
-              <input type="password" id="wifi-password" />
+              <input type="password" id="wifi-password" value="********" />
             </div>
             <div class="form-group">
               <label>
@@ -52,6 +52,7 @@
                 <input
                   type="text"
                   id="wifi-static-ip-addr"
+                  value="0.0.0.0"
                   placeholder="192.168.1.100"
                 />
               </div>
@@ -60,6 +61,7 @@
                 <input
                   type="text"
                   id="wifi-gateway"
+                  value="0.0.0.0"
                   placeholder="192.168.1.1"
                 />
               </div>
@@ -68,19 +70,21 @@
                 <input
                   type="text"
                   id="wifi-subnet"
+                  value="0.0.0.0"
                   placeholder="255.255.255.0"
                 />
               </div>
             </div>
             <div class="form-group">
               <label for="wifi-dns-primary">Primary DNS:</label>
-              <input type="text" id="wifi-dns-primary" placeholder="8.8.8.8" />
+              <input type="text" id="wifi-dns-primary" value="0.0.0.0" placeholder="8.8.8.8" />
             </div>
             <div class="form-group">
               <label for="wifi-dns-secondary">Secondary DNS:</label>
               <input
                 type="text"
                 id="wifi-dns-secondary"
+                value="0.0.0.0"
                 placeholder="1.1.1.1"
               />
             </div>
@@ -100,6 +104,7 @@
                 type="text"
                 id="tcp-server-ip"
                 required
+                value="192.168.1.50"
                 placeholder="192.168.1.50"
               />
             </div>
@@ -109,6 +114,7 @@
                 type="number"
                 id="tcp-server-port"
                 required
+                value="9000"
                 placeholder="9000"
               />
             </div>
@@ -126,7 +132,7 @@
               <label for="audio-sample-rate">Sample Rate:</label>
               <select id="audio-sample-rate">
                 <option value="8000">8000 Hz</option>
-                <option value="16000">16000 Hz</option>
+                <option value="16000" selected>16000 Hz</option>
                 <option value="22050">22050 Hz</option>
                 <option value="32000">32000 Hz</option>
                 <option value="44100">44100 Hz</option>
@@ -136,7 +142,7 @@
             <div class="form-group">
               <label for="audio-bits">Bits per Sample:</label>
               <select id="audio-bits">
-                <option value="16">16-bit</option>
+                <option value="16" selected>16-bit</option>
                 <option value="24">24-bit</option>
                 <option value="32">32-bit</option>
               </select>
@@ -144,21 +150,21 @@
             <div class="form-group">
               <label for="audio-channels">Channels:</label>
               <select id="audio-channels">
-                <option value="1">Mono</option>
+                <option value="1" selected>Mono</option>
                 <option value="2">Stereo</option>
               </select>
             </div>
             <div class="form-group">
               <label for="audio-bck-pin">BCK Pin (GPIO):</label>
-              <input type="number" id="audio-bck-pin" min="0" max="48" />
+              <input type="number" id="audio-bck-pin" value="2" min="0" max="48" />
             </div>
             <div class="form-group">
               <label for="audio-ws-pin">WS Pin (GPIO):</label>
-              <input type="number" id="audio-ws-pin" min="0" max="48" />
+              <input type="number" id="audio-ws-pin" value="3" min="0" max="48" />
             </div>
             <div class="form-group">
               <label for="audio-data-pin">Data In Pin (GPIO):</label>
-              <input type="number" id="audio-data-pin" min="0" max="48" />
+              <input type="number" id="audio-data-pin" value="1" min="0" max="48" />
             </div>
             <button type="submit" class="btn btn-primary">
               Save Audio Settings
@@ -175,19 +181,20 @@
               <input
                 type="number"
                 id="buffer-ring-size"
+                value="98304"
                 min="32768"
                 max="262144"
                 step="1024"
               />
-              <small>32 KB - 256 KB</small>
+              <small>32 KB - 256 KB (Default: 96 KB)</small>
             </div>
             <div class="form-group">
               <label for="buffer-dma-count">DMA Buffer Count:</label>
-              <input type="number" id="buffer-dma-count" min="4" max="16" />
+              <input type="number" id="buffer-dma-count" value="8" min="4" max="16" />
             </div>
             <div class="form-group">
               <label for="buffer-dma-len">DMA Buffer Length:</label>
-              <input type="number" id="buffer-dma-len" min="256" max="2048" />
+              <input type="number" id="buffer-dma-len" value="512" min="256" max="2048" />
             </div>
             <button type="submit" class="btn btn-primary">
               Save Buffer Settings
@@ -201,31 +208,31 @@
           <form id="debug-form">
             <div class="form-group">
               <label>
-                <input type="checkbox" id="debug-enabled" />
+                <input type="checkbox" id="debug-enabled" checked />
                 Enable Debug Logging
               </label>
             </div>
             <div class="form-group">
               <label>
-                <input type="checkbox" id="debug-stack-monitoring" />
+                <input type="checkbox" id="debug-stack-monitoring" checked />
                 Enable Stack Monitoring
               </label>
             </div>
             <div class="form-group">
               <label>
-                <input type="checkbox" id="debug-auto-reboot" />
+                <input type="checkbox" id="debug-auto-reboot" checked />
                 Auto Reboot on Critical Errors
               </label>
             </div>
             <div class="form-group">
               <label>
-                <input type="checkbox" id="debug-i2s-reinit" />
+                <input type="checkbox" id="debug-i2s-reinit" checked />
                 Auto I2S Reinitialization
               </label>
             </div>
             <div class="form-group">
               <label>
-                <input type="checkbox" id="debug-buffer-drain" />
+                <input type="checkbox" id="debug-buffer-drain" checked />
                 Force Buffer Drain on Overflow
               </label>
             </div>
