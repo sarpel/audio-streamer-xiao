@@ -508,7 +508,38 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Initializing WiFi...");
     if (!network_manager_init())
     {
-        ESP_LOGE(TAG, "CRITICAL: WiFi init failed, rebooting in 5 seconds...");
+        ESP_LOGE(TAG, "WiFi connection failed, starting captive portal...");
+
+        // Start captive portal for configuration
+        if (captive_portal_init())
+        {
+            ESP_LOGI(TAG, "Captive portal active. Connect to '%s' to configure.", CAPTIVE_PORTAL_SSID);
+
+            // Initialize web server for configuration in AP mode
+            if (web_server_init())
+            {
+                ESP_LOGI(TAG, "Web configuration available at http://192.168.4.1");
+            }
+
+            // Wait for configuration (no timeout when triggered by WiFi failure)
+            while (captive_portal_is_active())
+            {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+
+                // Check if configuration was saved
+                if (captive_portal_is_configured())
+                {
+                    ESP_LOGI(TAG, "Configuration received, rebooting to apply...");
+                    captive_portal_stop();
+                    web_server_deinit();
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+                    esp_restart();
+                }
+            }
+        }
+
+        // If captive portal failed to start, reboot
+        ESP_LOGE(TAG, "CRITICAL: Could not start captive portal, rebooting in 5 seconds...");
         vTaskDelay(pdMS_TO_TICKS(5000));
         esp_restart();
     }

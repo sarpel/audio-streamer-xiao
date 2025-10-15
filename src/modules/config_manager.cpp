@@ -47,9 +47,9 @@ static void load_defaults(void)
     i2s_config.sample_rate = SAMPLE_RATE;
     i2s_config.bits_per_sample = BITS_PER_SAMPLE;
     i2s_config.channels = CHANNELS;
-    i2s_config.bck_pin = I2S_BCK_PIN;
-    i2s_config.ws_pin = I2S_WS_PIN;
-    i2s_config.data_in_pin = I2S_DATA_IN_PIN;
+    i2s_config.bck_pin = I2S_BCLK_GPIO;
+    i2s_config.ws_pin = I2S_WS_GPIO;
+    i2s_config.data_in_pin = I2S_SD_GPIO;
 
     // Buffer defaults
     buffer_config.ring_buffer_size = RING_BUFFER_SIZE;

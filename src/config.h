@@ -31,13 +31,18 @@
 #define NTP_SERVER "pool.ntp.org"
 #define NTP_TIMEZONE "UTC-3" // Adjust for your timezone
 
-// I2S Pin Configuration (Seeed XIAO ESP32-S3)
-#define I2S_BCK_PIN 2     // Bit Clock (GPIO 2)
-#define I2S_WS_PIN 3      // Word Select / LRCLK (GPIO 3)
-#define I2S_DATA_IN_PIN 1 // Serial Data In (GPIO 1)
+// I2S pins (XIAO ESP32S3)
+#define I2S_BCLK_GPIO 2 // BCLK
+#define I2S_WS_GPIO 3   // LRCLK/WS
+#define I2S_SD_GPIO 1   // DATA IN (SD)
 
-// Audio Configuration
-#define SAMPLE_RATE 16000
+// Audio format
+#define I2S_SAMPLE_RATE 16000
+#define I2S_SLOT_BIT_WIDTH 32 // 32-bit slot (INMP441 verisi 24-bit)
+#define I2S_READ_SAMPLES 256
+
+// Legacy compatibility definitions
+#define SAMPLE_RATE I2S_SAMPLE_RATE
 #define BITS_PER_SAMPLE 16
 #define CHANNELS 1         // Mono
 #define BYTES_PER_SAMPLE 2 // 16-bit = 2 bytes per sample
