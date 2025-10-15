@@ -21,14 +21,36 @@ bool buffer_manager_init(size_t size);
  *
  * Thread-safe write operation. Blocks if buffer is full (backpressure).
  *
+ * @param data Pointer to int16_t samples
+ * @param samples Number of samples to write
+ * @return Number of samples actually written
+ */
+size_t buffer_manager_write_16(const int16_t *data, size_t samples);
+
+/**
+ * Write samples to ring buffer (legacy 32-bit interface)
+ *
+ * Thread-safe write operation. Blocks if buffer is full (backpressure).
+ *
  * @param data Pointer to int32_t samples
  * @param samples Number of samples to write
  * @return Number of samples actually written
  */
-size_t buffer_manager_write(const int32_t* data, size_t samples);
+size_t buffer_manager_write(const int32_t *data, size_t samples);
 
 /**
  * Read samples from ring buffer
+ *
+ * Thread-safe read operation. Blocks if buffer is empty.
+ *
+ * @param data Output buffer for int16_t samples
+ * @param samples Number of samples to read
+ * @return Number of samples actually read
+ */
+size_t buffer_manager_read_16(int16_t *data, size_t samples);
+
+/**
+ * Read samples from ring buffer (legacy 32-bit interface)
  *
  * Thread-safe read operation. Blocks if buffer is empty.
  *
@@ -36,7 +58,7 @@ size_t buffer_manager_write(const int32_t* data, size_t samples);
  * @param samples Number of samples to read
  * @return Number of samples actually read
  */
-size_t buffer_manager_read(int32_t* data, size_t samples);
+size_t buffer_manager_read(int32_t *data, size_t samples);
 
 /**
  * Get available samples for reading

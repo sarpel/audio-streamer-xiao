@@ -38,8 +38,9 @@
 
 // Audio format
 #define I2S_SAMPLE_RATE 16000
-#define I2S_SLOT_BIT_WIDTH 32 // 32-bit slot (INMP441 verisi 24-bit)
+#define I2S_SLOT_BIT_WIDTH 32 // 32-bit slot (INMP441 produces 24-bit data)
 #define I2S_READ_SAMPLES 256
+#define TCP_SEND_SAMPLES 4096
 
 // Legacy compatibility definitions
 #define SAMPLE_RATE I2S_SAMPLE_RATE
@@ -54,7 +55,7 @@
 
 // Task Configuration
 #define I2S_READER_STACK_SIZE 4096
-#define TCP_SENDER_STACK_SIZE 4096
+#define TCP_SENDER_STACK_SIZE 20480
 #define WATCHDOG_STACK_SIZE 4096
 
 // Task priorities (0 = lowest, configMAX_PRIORITIES-1 = highest)
@@ -66,11 +67,12 @@
 // Core 0: WiFi stack runs here, assign TCP sender for network efficiency
 // Core 1: Dedicated to I2S for consistent audio capture timing
 #define I2S_READER_CORE 1 // Dedicated audio core
-#define TCP_SENDER_CORE 1 // Same core as WiFi stack
+#define TCP_SENDER_CORE 0 // Same core as WiFi stack
 #define WATCHDOG_CORE 0   // Low priority, share with WiFi/TCP
 
 // Watchdog Configuration
 #define WATCHDOG_TIMEOUT_SEC 60
+#define WATCHDOG_LOG_INTERVAL_SEC 10
 #define NTP_RESYNC_INTERVAL_SEC 3600 // 1 hour
 
 // Debug Configuration

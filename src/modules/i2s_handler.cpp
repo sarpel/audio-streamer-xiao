@@ -28,7 +28,10 @@ bool i2s_handler_init(void)
     i2s_std_clk_config_t clk_cfg = {
         .sample_rate_hz = I2S_SAMPLE_RATE,
         .clk_src = I2S_CLK_SRC_DEFAULT,
-        .mclk_multiple = I2S_MCLK_MULTIPLE_256};
+        .ext_clk_freq_hz = 0,
+        .mclk_multiple = (i2s_mclk_multiple_t)0, // Disable MCLK
+        .bclk_div = 8                            // BCLK divider (default for most cases)
+    };
 
     // Slot: Philips standard, mono-left, 32-bit slot, 24-bit data
     i2s_std_slot_config_t slot_cfg = {
@@ -147,25 +150,38 @@ size_t i2s_read_16(int16_t *out, size_t samples)
         return 0;
     }
 
-    const size_t bytes_to_read = samples * sizeof(int32_t);
     static int32_t tmp[I2S_READ_SAMPLES];
-    size_t bytes_read = 0;
+    size_t total_samples_read = 0;
+    size_t samples_remaining = samples;
+    int16_t *out_ptr = out;
 
-    esp_err_t ret = i2s_channel_read(rx_chan, tmp, bytes_to_read, &bytes_read, portMAX_DELAY);
-    if (ret != ESP_OK)
+    while (samples_remaining > 0)
     {
-        ESP_LOGE(TAG, "I2S read failed: %s", esp_err_to_name(ret));
-        return 0;
+        size_t chunk_samples = samples_remaining > I2S_READ_SAMPLES ? I2S_READ_SAMPLES : samples_remaining;
+        size_t bytes_to_read = chunk_samples * sizeof(int32_t);
+        size_t bytes_read = 0;
+        esp_err_t ret = i2s_channel_read(rx_chan, tmp, bytes_to_read, &bytes_read, portMAX_DELAY);
+        if (ret != ESP_OK)
+        {
+            ESP_LOGE(TAG, "I2S read failed: %s", esp_err_to_name(ret));
+            break;
+        }
+        size_t n = bytes_read / sizeof(int32_t);
+        for (size_t i = 0; i < n; ++i)
+        {
+            out_ptr[i] = (int16_t)(tmp[i] >> 16);
+        }
+        out_ptr += n;
+        total_samples_read += n;
+        if (n < chunk_samples)
+        {
+            // Underflow: fewer samples read than requested
+            break;
+        }
+        samples_remaining -= n;
     }
 
-    // Convert 24-bit (in 32-bit container) to 16-bit by shifting right 8 bits
-    size_t n = bytes_read / sizeof(int32_t);
-    for (size_t i = 0; i < n; ++i)
-    {
-        out[i] = (int16_t)(tmp[i] >> 8);
-    }
-
-    return n;
+    return total_samples_read;
 }
 
 void i2s_handler_deinit(void)

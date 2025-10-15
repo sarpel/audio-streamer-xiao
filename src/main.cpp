@@ -32,6 +32,9 @@ static uint32_t consecutive_tcp_failures = 0;
 static uint32_t buffer_overflow_count = 0;
 static uint32_t last_overflow_time = 0;
 
+static void start_captive_portal(bool with_timeout);
+static void create_tasks(void);
+
 /**
  * I2S Reader Task with Error Recovery
  */
@@ -39,8 +42,9 @@ static void i2s_reader_task(void *arg)
 {
     ESP_LOGI(TAG, "I2S Reader task started");
 
-    const size_t read_samples = 512;
-    int32_t *i2s_buffer = (int32_t *)malloc(read_samples * sizeof(int32_t));
+    const size_t read_samples = I2S_READ_SAMPLES;
+    // ✅ CHANGED: Use int16_t buffer for direct 16-bit I2S reading (50% bandwidth savings)
+    int16_t *i2s_buffer = (int16_t *)malloc(read_samples * sizeof(int16_t));
 
     if (i2s_buffer == NULL)
     {
@@ -51,14 +55,15 @@ static void i2s_reader_task(void *arg)
 
     while (1)
     {
-        size_t bytes_read = 0;
+        // ✅ CHANGED: Use i2s_read_16() to read directly as 16-bit samples
+        size_t samples_read = i2s_read_16(i2s_buffer, read_samples);
 
-        if (i2s_handler_read(i2s_buffer, read_samples, &bytes_read))
+        if (samples_read > 0)
         {
             consecutive_i2s_failures = 0; // Reset failure counter
 
-            size_t samples_read = bytes_read / sizeof(int32_t);
-            size_t written = buffer_manager_write(i2s_buffer, samples_read);
+            // ✅ CHANGED: Use buffer_manager_write_16() for native 16-bit storage
+            size_t written = buffer_manager_write_16(i2s_buffer, samples_read);
 
             if (written < samples_read)
             {
@@ -133,18 +138,18 @@ static void tcp_sender_task(void *arg)
 {
     ESP_LOGI(TAG, "TCP Sender task started");
 
-    // ✅ FIX: Use stack-allocated buffer instead of heap allocation
-    // This avoids OOM crashes from 65KB malloc that was failing
-    const size_t send_samples = 4096; // Reduced from 16384 to fit on stack
-    static int32_t send_buffer[4096]; // Static allocation in .bss section
+    // ✅ CHANGED: Use int16_t buffer for native 16-bit samples (50% bandwidth savings)
+    const size_t send_samples = TCP_SEND_SAMPLES;
+    static int16_t send_buffer[TCP_SEND_SAMPLES]; // Static allocation in .bss section
 
-    ESP_LOGI(TAG, "Using stack-allocated send buffer (%zu samples)", send_samples);
+    ESP_LOGI(TAG, "Using 16-bit send buffer (%zu samples)", send_samples);
 
     ESP_LOGI(TAG, "Waiting for initial buffer fill...");
     vTaskDelay(pdMS_TO_TICKS(5000));
 
     uint32_t reconnect_backoff_ms = RECONNECT_BACKOFF_MS;
     uint32_t reconnect_attempts = 0;
+    uint32_t total_reconnect_attempts = 0; // ✅ ADD: Track total failures
 
     while (1)
     {
@@ -167,11 +172,13 @@ static void tcp_sender_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(20)); // Changed from 5ms to 20ms
         }
 
-        size_t samples_read = buffer_manager_read(send_buffer, send_samples);
+        // ✅ CHANGED: Use buffer_manager_read_16() for native 16-bit samples
+        size_t samples_read = buffer_manager_read_16(send_buffer, send_samples);
 
         if (samples_read > 0)
         {
-            if (!tcp_streamer_send_audio(send_buffer, samples_read))
+            // ✅ CHANGED: Send 16-bit samples directly (tcp_streamer handles int16_t now)
+            if (!tcp_streamer_send_audio_16(send_buffer, samples_read))
             {
                 consecutive_tcp_failures++;
                 ESP_LOGE(TAG, "TCP send failed (attempt %lu/%d)",
@@ -186,15 +193,27 @@ static void tcp_sender_task(void *arg)
                     consecutive_tcp_failures = 0;
                     reconnect_backoff_ms = RECONNECT_BACKOFF_MS;
                     reconnect_attempts = 0;
+                    total_reconnect_attempts = 0; // ✅ ADD: Reset total counter on success
                 }
                 else
                 {
                     reconnect_attempts++;
+                    total_reconnect_attempts++; // ✅ ADD: Increment total counter
 
                     reconnect_backoff_ms *= 2;
                     if (reconnect_backoff_ms > MAX_RECONNECT_BACKOFF_MS)
                     {
                         reconnect_backoff_ms = MAX_RECONNECT_BACKOFF_MS;
+                    }
+
+                    // ✅ ADD: TCP pause mechanism after 100 total failures
+                    if (total_reconnect_attempts >= 100)
+                    {
+                        ESP_LOGE(TAG, "100 reconnection failures reached, pausing streaming for 5 minutes");
+                        vTaskDelay(pdMS_TO_TICKS(300000));           // 5 minutes pause
+                        total_reconnect_attempts = 0;                // Reset counter after pause
+                        reconnect_backoff_ms = RECONNECT_BACKOFF_MS; // Reset backoff
+                        ESP_LOGI(TAG, "Resuming streaming attempts...");
                     }
 
 #if ENABLE_AUTO_REBOOT
@@ -212,9 +231,8 @@ static void tcp_sender_task(void *arg)
                 consecutive_tcp_failures = 0;
                 reconnect_backoff_ms = RECONNECT_BACKOFF_MS;
                 reconnect_attempts = 0;
+                tcp_sender_last_feed = xTaskGetTickCount();
             }
-
-            tcp_sender_last_feed = xTaskGetTickCount();
         }
         else
         {
@@ -296,7 +314,7 @@ static void watchdog_task(void *arg)
         }
 
         // Log statistics every 10 seconds
-        if (++log_counter >= 10)
+        if (++log_counter >= WATCHDOG_LOG_INTERVAL_SEC)
         {
             uint64_t bytes_sent;
             uint32_t reconnects;
@@ -405,195 +423,8 @@ static void watchdog_task(void *arg)
     vTaskDelete(NULL);
 }
 
-extern "C" void app_main(void)
+static void create_tasks(void)
 {
-    ESP_LOGI(TAG, "=== Audio Streamer Starting ===");
-    ESP_LOGI(TAG, "ESP-IDF Version: %s", esp_get_idf_version());
-
-    // ✅ Subscribe app_main to watchdog
-    esp_task_wdt_add(xTaskGetCurrentTaskHandle());
-
-    esp_task_wdt_reset();
-    // Initialize NVS flash (required for config manager)
-    ESP_LOGI(TAG, "Initializing NVS flash...");
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-        ESP_LOGW(TAG, "NVS partition was truncated, erasing and re-initializing...");
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "CRITICAL: NVS flash init failed: %s, rebooting...", esp_err_to_name(ret));
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        esp_restart();
-    }
-    ESP_LOGI(TAG, "NVS flash initialized successfully");
-
-    esp_task_wdt_reset();
-    // Initialize configuration manager
-    ESP_LOGI(TAG, "Initializing configuration manager...");
-    if (!config_manager_init())
-    {
-        ESP_LOGE(TAG, "CRITICAL: Config manager init failed, rebooting...");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        esp_restart();
-    }
-
-    // Load configuration from NVS (or defaults on first boot)
-    if (!config_manager_load())
-    {
-        ESP_LOGE(TAG, "CRITICAL: Failed to load configuration, rebooting...");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        esp_restart();
-    }
-
-    if (config_manager_is_first_boot())
-    {
-        ESP_LOGI(TAG, "First boot detected - using default configuration");
-        config_manager_save(); // Save defaults to NVS
-    }
-
-    esp_task_wdt_reset();
-    // Check if first boot and try captive portal
-    if (config_manager_is_first_boot() || !captive_portal_is_configured())
-    {
-        ESP_LOGI(TAG, "Starting captive portal for initial setup...");
-        if (captive_portal_init())
-        {
-            ESP_LOGI(TAG, "Captive portal active. Connect to '%s' to configure.", CAPTIVE_PORTAL_SSID);
-
-            // Initialize web server for configuration in AP mode
-            if (web_server_init())
-            {
-                ESP_LOGI(TAG, "Web configuration available at http://192.168.4.1");
-            }
-
-            // Wait for configuration (timeout after CAPTIVE_PORTAL_TIMEOUT_SEC)
-            uint32_t timeout_ticks = pdMS_TO_TICKS(CAPTIVE_PORTAL_TIMEOUT_SEC * 1000);
-            uint32_t start_tick = xTaskGetTickCount();
-
-            while (captive_portal_is_active() &&
-                   (xTaskGetTickCount() - start_tick) < timeout_ticks)
-            {
-                vTaskDelay(pdMS_TO_TICKS(1000));
-
-                // Check if configuration was saved
-                if (captive_portal_is_configured())
-                {
-                    ESP_LOGI(TAG, "Configuration received, stopping captive portal");
-                    break;
-                }
-            }
-
-            captive_portal_stop();
-            web_server_deinit();
-
-            if (!captive_portal_is_configured())
-            {
-                ESP_LOGW(TAG, "Captive portal timeout, continuing with defaults");
-            }
-            else
-            {
-                ESP_LOGI(TAG, "Configuration complete, rebooting to apply...");
-                vTaskDelay(pdMS_TO_TICKS(2000));
-                esp_restart();
-            }
-        }
-    }
-
-    esp_task_wdt_reset();
-    // Initialize components with error handling
-    ESP_LOGI(TAG, "Initializing WiFi...");
-    if (!network_manager_init())
-    {
-        ESP_LOGE(TAG, "WiFi connection failed, starting captive portal...");
-
-        // Start captive portal for configuration
-        if (captive_portal_init())
-        {
-            ESP_LOGI(TAG, "Captive portal active. Connect to '%s' to configure.", CAPTIVE_PORTAL_SSID);
-
-            // Initialize web server for configuration in AP mode
-            if (web_server_init())
-            {
-                ESP_LOGI(TAG, "Web configuration available at http://192.168.4.1");
-            }
-
-            // Wait for configuration (no timeout when triggered by WiFi failure)
-            while (captive_portal_is_active())
-            {
-                vTaskDelay(pdMS_TO_TICKS(1000));
-
-                // Check if configuration was saved
-                if (captive_portal_is_configured())
-                {
-                    ESP_LOGI(TAG, "Configuration received, rebooting to apply...");
-                    captive_portal_stop();
-                    web_server_deinit();
-                    vTaskDelay(pdMS_TO_TICKS(2000));
-                    esp_restart();
-                }
-            }
-        }
-
-        // If captive portal failed to start, reboot
-        ESP_LOGE(TAG, "CRITICAL: Could not start captive portal, rebooting in 5 seconds...");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        esp_restart();
-    }
-
-    ESP_LOGI("MAIN", "Free heap: %lu bytes", esp_get_free_heap_size());
-    ESP_LOGI("MAIN", "Largest free block: %lu bytes",
-             heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-
-    ESP_LOGI(TAG, "Initializing mDNS...");
-    network_manager_init_mdns(); // Non-critical, continue if fails
-
-    ESP_LOGI(TAG, "Initializing NTP...");
-    network_manager_init_ntp();
-
-    // Initialize web server
-    ESP_LOGI(TAG, "Initializing web server...");
-    if (!web_server_init())
-    {
-        ESP_LOGW(TAG, "Web server init failed, continuing without web UI");
-    }
-    else
-    {
-        ESP_LOGI(TAG, "Web UI available at http://audiostreamer.local or device IP");
-    }
-
-    ESP_LOGI(TAG, "Initializing ring buffer...");
-    if (!buffer_manager_init(RING_BUFFER_SIZE))
-    {
-        ESP_LOGE(TAG, "CRITICAL: Buffer init failed, rebooting...");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        esp_restart();
-    }
-
-    esp_task_wdt_reset();
-    ESP_LOGI(TAG, "Initializing I2S...");
-    if (!i2s_handler_init())
-    {
-        ESP_LOGE(TAG, "CRITICAL: I2S init failed, rebooting...");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        esp_restart();
-    }
-
-    esp_task_wdt_reset();
-    ESP_LOGI(TAG, "Connecting to TCP server...");
-    if (!tcp_streamer_init())
-    {
-        ESP_LOGW(TAG, "Initial TCP connection failed, will retry in background");
-    }
-
-    // Initialize watchdog feed timestamps
-    i2s_reader_last_feed = xTaskGetTickCount();
-    tcp_sender_last_feed = xTaskGetTickCount();
-
-    // Create tasks
     ESP_LOGI(TAG, "Creating tasks...");
 
     BaseType_t result;
@@ -645,6 +476,173 @@ extern "C" void app_main(void)
         esp_restart();
     }
     ESP_LOGI(TAG, "Watchdog task created");
+}
+
+static void start_captive_portal(bool with_timeout)
+{
+    ESP_LOGI(TAG, "Starting captive portal...");
+    if (captive_portal_init())
+    {
+        ESP_LOGI(TAG, "Captive portal active. Connect to '%s' to configure.", CAPTIVE_PORTAL_SSID);
+
+        // Initialize web server for configuration in AP mode
+        if (web_server_init())
+        {
+            ESP_LOGI(TAG, "Web configuration available at http://192.168.4.1");
+        }
+
+        // Wait for configuration
+        uint32_t start_tick = xTaskGetTickCount();
+        uint32_t timeout_ticks = with_timeout ? pdMS_TO_TICKS(CAPTIVE_PORTAL_TIMEOUT_SEC * 1000) : portMAX_DELAY;
+
+        while (captive_portal_is_active() && (xTaskGetTickCount() - start_tick) < timeout_ticks)
+        {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+
+            // Check if configuration was saved
+            if (captive_portal_is_configured())
+            {
+                ESP_LOGI(TAG, "Configuration received, stopping captive portal");
+                break;
+            }
+        }
+
+        captive_portal_stop();
+        web_server_deinit();
+
+        if (!captive_portal_is_configured() && with_timeout)
+        {
+            ESP_LOGW(TAG, "Captive portal timeout, continuing with defaults");
+        }
+        else if (captive_portal_is_configured())
+        {
+            ESP_LOGI(TAG, "Configuration complete, rebooting to apply...");
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            esp_restart();
+        }
+    }
+    else
+    {
+        ESP_LOGE(TAG, "CRITICAL: Could not start captive portal, rebooting in 5 seconds...");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
+}
+
+extern "C" void app_main(void)
+{
+    ESP_LOGI(TAG, "=== Audio Streamer Starting ===");
+    ESP_LOGI(TAG, "ESP-IDF Version: %s", esp_get_idf_version());
+
+    // ✅ Subscribe app_main to watchdog
+    esp_task_wdt_add(xTaskGetCurrentTaskHandle());
+
+    esp_task_wdt_reset();
+    // Initialize NVS flash (required for config manager)
+    ESP_LOGI(TAG, "Initializing NVS flash...");
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_LOGW(TAG, "NVS partition was truncated, erasing and re-initializing...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "CRITICAL: NVS flash init failed: %s, rebooting...", esp_err_to_name(ret));
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
+    ESP_LOGI(TAG, "NVS flash initialized successfully");
+
+    esp_task_wdt_reset();
+    // Initialize configuration manager
+    ESP_LOGI(TAG, "Initializing configuration manager...");
+    if (!config_manager_init())
+    {
+        ESP_LOGE(TAG, "CRITICAL: Config manager init failed, rebooting...");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
+
+    // Load configuration from NVS (or defaults on first boot)
+    if (!config_manager_load())
+    {
+        ESP_LOGE(TAG, "CRITICAL: Failed to load configuration, rebooting...");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
+
+    if (config_manager_is_first_boot())
+    {
+        ESP_LOGI(TAG, "First boot detected - using default configuration");
+        config_manager_save(); // Save defaults to NVS
+    }
+
+    // Check if first boot and try captive portal
+    if (config_manager_is_first_boot() || !captive_portal_is_configured())
+    {
+        start_captive_portal(true);
+    }
+
+    esp_task_wdt_reset();
+    // Initialize components with error handling
+    ESP_LOGI(TAG, "Initializing WiFi...");
+    if (!network_manager_init())
+    {
+        start_captive_portal(false);
+    }
+
+    ESP_LOGI("MAIN", "Free heap: %lu bytes", esp_get_free_heap_size());
+    ESP_LOGI("MAIN", "Largest free block: %lu bytes",
+             heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
+    ESP_LOGI(TAG, "Initializing mDNS...");
+    network_manager_init_mdns(); // Non-critical, continue if fails
+
+    ESP_LOGI(TAG, "Initializing NTP...");
+    network_manager_init_ntp();
+
+    // Initialize web server
+    ESP_LOGI(TAG, "Initializing web server...");
+    if (!web_server_init())
+    {
+        ESP_LOGW(TAG, "Web server init failed, continuing without web UI");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Web UI available at http://audiostreamer.local or device IP");
+    }
+
+    ESP_LOGI(TAG, "Initializing ring buffer...");
+    if (!buffer_manager_init(RING_BUFFER_SIZE))
+    {
+        ESP_LOGE(TAG, "CRITICAL: Buffer init failed, rebooting...");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
+
+    esp_task_wdt_reset();
+    ESP_LOGI(TAG, "Initializing I2S...");
+    if (!i2s_handler_init())
+    {
+        ESP_LOGE(TAG, "CRITICAL: I2S init failed, rebooting...");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
+
+    esp_task_wdt_reset();
+    ESP_LOGI(TAG, "Connecting to TCP server...");
+    if (!tcp_streamer_init())
+    {
+        ESP_LOGW(TAG, "Initial TCP connection failed, will retry in background");
+    }
+
+    // Initialize watchdog feed timestamps
+    i2s_reader_last_feed = xTaskGetTickCount();
+    tcp_sender_last_feed = xTaskGetTickCount();
+
+    create_tasks();
 
     ESP_LOGI(TAG, "=== Audio Streamer Running ===");
 
