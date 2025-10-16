@@ -1,5 +1,6 @@
 #include "config_schema.h"
 #include "../config.h"
+#include "performance_monitor.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "nvs.h"

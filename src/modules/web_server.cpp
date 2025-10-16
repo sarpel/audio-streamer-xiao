@@ -1,6 +1,6 @@
 #include "../config.h"
-#include "web_server_v2.h"
-#include "config_manager_v2.h"
+#include "web_server.h"
+#include "config_manager.h"
 #include "network_manager.h"
 #include "tcp_streamer.h"
 #include "udp_streamer.h"
@@ -22,11 +22,11 @@
 #include <string.h>
 #include <errno.h>
 
-static const char *TAG = "WEB_SERVER_V2";
+static const char *TAG = "WEB_SERVER";
 static httpd_handle_t server = NULL;
 
 // Helper function to add CORS headers to responses
-void web_server_v2_add_cors_headers(httpd_req_t *req)
+void web_server_add_cors_headers(httpd_req_t *req)
 {
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -37,17 +37,17 @@ void web_server_v2_add_cors_headers(httpd_req_t *req)
 // OPTIONS handler for CORS preflight requests
 static esp_err_t options_handler(httpd_req_t *req)
 {
-    web_server_v2_add_cors_headers(req);
+    web_server_add_cors_headers(req);
     httpd_resp_set_status(req, "204 No Content");
     httpd_resp_send(req, NULL, 0);
     return ESP_OK;
 }
 
 // Authentication functions
-esp_err_t web_server_v2_send_auth_required(httpd_req_t *req)
+esp_err_t web_server_send_auth_required(httpd_req_t *req)
 {
     // Add CORS headers first (critical for browser auth prompts to work)
-    web_server_v2_add_cors_headers(req);
+    web_server_add_cors_headers(req);
 
     httpd_resp_set_status(req, "401 Unauthorized");
     httpd_resp_set_type(req, "application/json");
@@ -65,7 +65,7 @@ esp_err_t web_server_v2_send_auth_required(httpd_req_t *req)
     return ESP_FAIL;
 }
 
-bool web_server_v2_check_auth(httpd_req_t *req)
+bool web_server_check_auth(httpd_req_t *req)
 {
     // Validate request pointer
     if (!req)
@@ -78,9 +78,9 @@ bool web_server_v2_check_auth(httpd_req_t *req)
     char username[32];
     char password[64];
 
-    // Use config_manager_v2_get_config to get raw password (not masked)
+    // Use config_manager_get_config to get raw password (not masked)
     unified_config_t config;
-    if (!config_manager_v2_get_config(&config))
+    if (!config_manager_get_config(&config))
     {
         ESP_LOGW(TAG, "Failed to get auth config");
         return false;
@@ -146,7 +146,7 @@ bool web_server_v2_check_auth(httpd_req_t *req)
 }
 
 // Helper function to send JSON response
-esp_err_t web_server_v2_send_json_response(httpd_req_t *req, cJSON *json, int status_code)
+esp_err_t web_server_send_json_response(httpd_req_t *req, cJSON *json, int status_code)
 {
     char *response = cJSON_Print(json);
     if (!response)
@@ -155,7 +155,7 @@ esp_err_t web_server_v2_send_json_response(httpd_req_t *req, cJSON *json, int st
         return ESP_FAIL;
     }
 
-    web_server_v2_add_cors_headers(req);
+    web_server_add_cors_headers(req);
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_status(req, status_code == 200 ? HTTPD_200 : status_code == 400 ? HTTPD_400
                                                             : status_code == 500   ? HTTPD_500
@@ -220,9 +220,9 @@ static esp_err_t safe_httpd_req_recv(httpd_req_t *req, char *buf, size_t buf_siz
 // GET /api/config/wifi - Get WiFi configuration only
 static esp_err_t api_get_wifi_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -230,33 +230,33 @@ static esp_err_t api_get_wifi_handler(httpd_req_t *req)
     char dns_primary[16], dns_secondary[16];
     char use_static_ip_str[8];
 
-    if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_SSID, ssid, sizeof(ssid)))
+    if (config_manager_get_field(CONFIG_FIELD_WIFI_SSID, ssid, sizeof(ssid)))
     {
         cJSON_AddStringToObject(root, "ssid", ssid);
     }
     cJSON_AddStringToObject(root, "password", "********"); // Hide password
 
-    if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip_str, sizeof(use_static_ip_str)) &&
-        config_manager_v2_get_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip, sizeof(static_ip)) &&
-        config_manager_v2_get_field(CONFIG_FIELD_WIFI_GATEWAY, gateway, sizeof(gateway)) &&
-        config_manager_v2_get_field(CONFIG_FIELD_WIFI_SUBNET, subnet, sizeof(subnet)))
+    if (config_manager_get_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip_str, sizeof(use_static_ip_str)) &&
+        config_manager_get_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip, sizeof(static_ip)) &&
+        config_manager_get_field(CONFIG_FIELD_WIFI_GATEWAY, gateway, sizeof(gateway)) &&
+        config_manager_get_field(CONFIG_FIELD_WIFI_SUBNET, subnet, sizeof(subnet)))
     {
         cJSON_AddBoolToObject(root, "use_static_ip", (strcmp(use_static_ip_str, "1") == 0));
         cJSON_AddStringToObject(root, "static_ip", static_ip);
         cJSON_AddStringToObject(root, "gateway", gateway);
         cJSON_AddStringToObject(root, "subnet", subnet);
 
-        if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary, sizeof(dns_primary)))
+        if (config_manager_get_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary, sizeof(dns_primary)))
         {
             cJSON_AddStringToObject(root, "dns_primary", dns_primary);
         }
-        if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary, sizeof(dns_secondary)))
+        if (config_manager_get_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary, sizeof(dns_secondary)))
         {
             cJSON_AddStringToObject(root, "dns_secondary", dns_secondary);
         }
     }
 
-    esp_err_t ret = web_server_v2_send_json_response(req, root, 200);
+    esp_err_t ret = web_server_send_json_response(req, root, 200);
     cJSON_Delete(root);
     return ret;
 }
@@ -264,9 +264,9 @@ static esp_err_t api_get_wifi_handler(httpd_req_t *req)
 // POST /api/config/wifi - Update WiFi configuration
 static esp_err_t api_post_wifi_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     char buf[1024];
@@ -295,48 +295,48 @@ static esp_err_t api_post_wifi_handler(httpd_req_t *req)
     // Update WiFi SSID
     if (ssid && cJSON_IsString(ssid))
     {
-        config_manager_v2_set_field(CONFIG_FIELD_WIFI_SSID, ssid->valuestring, NULL);
+        config_manager_set_field(CONFIG_FIELD_WIFI_SSID, ssid->valuestring, NULL);
     }
 
     // Update WiFi password (only if not masked)
     if (password && cJSON_IsString(password) && strcmp(password->valuestring, "********") != 0)
     {
-        config_manager_v2_set_field(CONFIG_FIELD_WIFI_PASSWORD, password->valuestring, NULL);
+        config_manager_set_field(CONFIG_FIELD_WIFI_PASSWORD, password->valuestring, NULL);
     }
 
     // Update static IP settings
     if (use_static_ip && cJSON_IsBool(use_static_ip))
     {
-        config_manager_v2_set_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip->valueint ? "1" : "0", NULL);
+        config_manager_set_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip->valueint ? "1" : "0", NULL);
     }
 
     if (static_ip && cJSON_IsString(static_ip))
     {
-        config_manager_v2_set_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip->valuestring, NULL);
+        config_manager_set_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip->valuestring, NULL);
     }
 
     if (gateway && cJSON_IsString(gateway))
     {
-        config_manager_v2_set_field(CONFIG_FIELD_WIFI_GATEWAY, gateway->valuestring, NULL);
+        config_manager_set_field(CONFIG_FIELD_WIFI_GATEWAY, gateway->valuestring, NULL);
     }
 
     if (subnet && cJSON_IsString(subnet))
     {
-        config_manager_v2_set_field(CONFIG_FIELD_WIFI_SUBNET, subnet->valuestring, NULL);
+        config_manager_set_field(CONFIG_FIELD_WIFI_SUBNET, subnet->valuestring, NULL);
     }
 
     if (dns_primary && cJSON_IsString(dns_primary))
     {
-        config_manager_v2_set_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary->valuestring, NULL);
+        config_manager_set_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary->valuestring, NULL);
     }
 
     if (dns_secondary && cJSON_IsString(dns_secondary))
     {
-        config_manager_v2_set_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary->valuestring, NULL);
+        config_manager_set_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary->valuestring, NULL);
     }
 
     // Save configuration
-    if (!config_manager_v2_save())
+    if (!config_manager_save())
     {
         cJSON_Delete(root);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save configuration");
@@ -355,7 +355,7 @@ static esp_err_t api_post_wifi_handler(httpd_req_t *req)
 
     cJSON_Delete(root);
 
-    esp_err_t ret = web_server_v2_send_json_response(req, response, 200);
+    esp_err_t ret = web_server_send_json_response(req, response, 200);
     cJSON_Delete(response);
     return ret;
 }
@@ -363,9 +363,9 @@ static esp_err_t api_post_wifi_handler(httpd_req_t *req)
 // GET /api/config/network - Get network configuration (WiFi + TCP/UDP)
 static esp_err_t api_get_network_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -376,27 +376,27 @@ static esp_err_t api_get_network_handler(httpd_req_t *req)
     char dns_primary[16], dns_secondary[16];
     char use_static_ip_str[8];
 
-    if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_SSID, ssid, sizeof(ssid)))
+    if (config_manager_get_field(CONFIG_FIELD_WIFI_SSID, ssid, sizeof(ssid)))
     {
         cJSON_AddStringToObject(wifi, "ssid", ssid);
     }
     cJSON_AddStringToObject(wifi, "password", "********"); // Hide password
 
-    if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip_str, sizeof(use_static_ip_str)) &&
-        config_manager_v2_get_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip, sizeof(static_ip)) &&
-        config_manager_v2_get_field(CONFIG_FIELD_WIFI_GATEWAY, gateway, sizeof(gateway)) &&
-        config_manager_v2_get_field(CONFIG_FIELD_WIFI_SUBNET, subnet, sizeof(subnet)))
+    if (config_manager_get_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip_str, sizeof(use_static_ip_str)) &&
+        config_manager_get_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip, sizeof(static_ip)) &&
+        config_manager_get_field(CONFIG_FIELD_WIFI_GATEWAY, gateway, sizeof(gateway)) &&
+        config_manager_get_field(CONFIG_FIELD_WIFI_SUBNET, subnet, sizeof(subnet)))
     {
         cJSON_AddBoolToObject(wifi, "use_static_ip", (strcmp(use_static_ip_str, "1") == 0));
         cJSON_AddStringToObject(wifi, "static_ip", static_ip);
         cJSON_AddStringToObject(wifi, "gateway", gateway);
         cJSON_AddStringToObject(wifi, "subnet", subnet);
 
-        if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary, sizeof(dns_primary)))
+        if (config_manager_get_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary, sizeof(dns_primary)))
         {
             cJSON_AddStringToObject(wifi, "dns_primary", dns_primary);
         }
-        if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary, sizeof(dns_secondary)))
+        if (config_manager_get_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary, sizeof(dns_secondary)))
         {
             cJSON_AddStringToObject(wifi, "dns_secondary", dns_secondary);
         }
@@ -408,25 +408,25 @@ static esp_err_t api_get_network_handler(httpd_req_t *req)
     char tcp_ip[16], udp_ip[16];
     char tcp_port_str[8], udp_port_str[8];
 
-    if (config_manager_v2_get_field(CONFIG_FIELD_TCP_SERVER_IP, tcp_ip, sizeof(tcp_ip)))
+    if (config_manager_get_field(CONFIG_FIELD_TCP_SERVER_IP, tcp_ip, sizeof(tcp_ip)))
     {
         cJSON_AddStringToObject(server, "tcp_ip", tcp_ip);
     }
-    if (config_manager_v2_get_field(CONFIG_FIELD_UDP_SERVER_IP, udp_ip, sizeof(udp_ip)))
+    if (config_manager_get_field(CONFIG_FIELD_UDP_SERVER_IP, udp_ip, sizeof(udp_ip)))
     {
         cJSON_AddStringToObject(server, "udp_ip", udp_ip);
     }
-    if (config_manager_v2_get_field(CONFIG_FIELD_TCP_SERVER_PORT, tcp_port_str, sizeof(tcp_port_str)))
+    if (config_manager_get_field(CONFIG_FIELD_TCP_SERVER_PORT, tcp_port_str, sizeof(tcp_port_str)))
     {
         cJSON_AddNumberToObject(server, "tcp_port", atoi(tcp_port_str));
     }
-    if (config_manager_v2_get_field(CONFIG_FIELD_UDP_SERVER_PORT, udp_port_str, sizeof(udp_port_str)))
+    if (config_manager_get_field(CONFIG_FIELD_UDP_SERVER_PORT, udp_port_str, sizeof(udp_port_str)))
     {
         cJSON_AddNumberToObject(server, "udp_port", atoi(udp_port_str));
     }
 
     char protocol_str[8];
-    if (config_manager_v2_get_field(CONFIG_FIELD_STREAMING_PROTOCOL, protocol_str, sizeof(protocol_str)))
+    if (config_manager_get_field(CONFIG_FIELD_STREAMING_PROTOCOL, protocol_str, sizeof(protocol_str)))
     {
         int protocol = atoi(protocol_str);
         const char *protocol_name = (protocol == 0) ? "TCP" : (protocol == 1) ? "UDP"
@@ -436,7 +436,7 @@ static esp_err_t api_get_network_handler(httpd_req_t *req)
 
     cJSON_AddItemToObject(root, "server", server);
 
-    esp_err_t ret = web_server_v2_send_json_response(req, root, 200);
+    esp_err_t ret = web_server_send_json_response(req, root, 200);
     cJSON_Delete(root);
     return ret;
 }
@@ -444,9 +444,9 @@ static esp_err_t api_get_network_handler(httpd_req_t *req)
 // POST /api/config/network - Update network configuration
 static esp_err_t api_post_network_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     char buf[1024];
@@ -481,51 +481,51 @@ static esp_err_t api_post_network_handler(httpd_req_t *req)
         // Update WiFi SSID
         if (ssid && cJSON_IsString(ssid))
         {
-            config_manager_v2_set_field(CONFIG_FIELD_WIFI_SSID, ssid->valuestring, &result);
+            config_manager_set_field(CONFIG_FIELD_WIFI_SSID, ssid->valuestring, &result);
             changed = true;
         }
 
         // Update WiFi password (only if not masked)
         if (password && cJSON_IsString(password) && strcmp(password->valuestring, "********") != 0)
         {
-            config_manager_v2_set_field(CONFIG_FIELD_WIFI_PASSWORD, password->valuestring, &result);
+            config_manager_set_field(CONFIG_FIELD_WIFI_PASSWORD, password->valuestring, &result);
             changed = true;
         }
 
         // Update static IP settings
         if (use_static_ip && cJSON_IsBool(use_static_ip))
         {
-            config_manager_v2_set_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip->valueint ? "1" : "0", &result);
+            config_manager_set_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip->valueint ? "1" : "0", &result);
             changed = true;
         }
 
         if (static_ip && cJSON_IsString(static_ip))
         {
-            config_manager_v2_set_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip->valuestring, &result);
+            config_manager_set_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip->valuestring, &result);
             changed = true;
         }
 
         if (gateway && cJSON_IsString(gateway))
         {
-            config_manager_v2_set_field(CONFIG_FIELD_WIFI_GATEWAY, gateway->valuestring, &result);
+            config_manager_set_field(CONFIG_FIELD_WIFI_GATEWAY, gateway->valuestring, &result);
             changed = true;
         }
 
         if (subnet && cJSON_IsString(subnet))
         {
-            config_manager_v2_set_field(CONFIG_FIELD_WIFI_SUBNET, subnet->valuestring, &result);
+            config_manager_set_field(CONFIG_FIELD_WIFI_SUBNET, subnet->valuestring, &result);
             changed = true;
         }
 
         if (dns_primary && cJSON_IsString(dns_primary))
         {
-            config_manager_v2_set_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary->valuestring, &result);
+            config_manager_set_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary->valuestring, &result);
             changed = true;
         }
 
         if (dns_secondary && cJSON_IsString(dns_secondary))
         {
-            config_manager_v2_set_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary->valuestring, &result);
+            config_manager_set_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary->valuestring, &result);
             changed = true;
         }
     }
@@ -543,7 +543,7 @@ static esp_err_t api_post_network_handler(httpd_req_t *req)
         // Update TCP server settings
         if (tcp_ip && cJSON_IsString(tcp_ip))
         {
-            config_manager_v2_set_field(CONFIG_FIELD_TCP_SERVER_IP, tcp_ip->valuestring, &result);
+            config_manager_set_field(CONFIG_FIELD_TCP_SERVER_IP, tcp_ip->valuestring, &result);
             changed = true;
         }
 
@@ -551,14 +551,14 @@ static esp_err_t api_post_network_handler(httpd_req_t *req)
         {
             char port_str[8];
             snprintf(port_str, sizeof(port_str), "%d", tcp_port->valueint);
-            config_manager_v2_set_field(CONFIG_FIELD_TCP_SERVER_PORT, port_str, &result);
+            config_manager_set_field(CONFIG_FIELD_TCP_SERVER_PORT, port_str, &result);
             changed = true;
         }
 
         // Update UDP server settings
         if (udp_ip && cJSON_IsString(udp_ip))
         {
-            config_manager_v2_set_field(CONFIG_FIELD_UDP_SERVER_IP, udp_ip->valuestring, &result);
+            config_manager_set_field(CONFIG_FIELD_UDP_SERVER_IP, udp_ip->valuestring, &result);
             changed = true;
         }
 
@@ -566,7 +566,7 @@ static esp_err_t api_post_network_handler(httpd_req_t *req)
         {
             char port_str[8];
             snprintf(port_str, sizeof(port_str), "%d", udp_port->valueint);
-            config_manager_v2_set_field(CONFIG_FIELD_UDP_SERVER_PORT, port_str, &result);
+            config_manager_set_field(CONFIG_FIELD_UDP_SERVER_PORT, port_str, &result);
             changed = true;
         }
 
@@ -591,7 +591,7 @@ static esp_err_t api_post_network_handler(httpd_req_t *req)
             {
                 char protocol_str[8];
                 snprintf(protocol_str, sizeof(protocol_str), "%d", protocol_val);
-                config_manager_v2_set_field(CONFIG_FIELD_STREAMING_PROTOCOL, protocol_str, &result);
+                config_manager_set_field(CONFIG_FIELD_STREAMING_PROTOCOL, protocol_str, &result);
                 changed = true;
             }
         }
@@ -602,12 +602,12 @@ static esp_err_t api_post_network_handler(httpd_req_t *req)
     // Save configuration if changed
     if (changed)
     {
-        if (!config_manager_v2_save())
+        if (!config_manager_save())
         {
             cJSON *response = cJSON_CreateObject();
             cJSON_AddStringToObject(response, "status", "error");
             cJSON_AddStringToObject(response, "message", "Failed to save configuration");
-            esp_err_t ret = web_server_v2_send_json_response(req, response, 500);
+            esp_err_t ret = web_server_send_json_response(req, response, 500);
             cJSON_Delete(response);
             return ret;
         }
@@ -631,7 +631,7 @@ static esp_err_t api_post_network_handler(httpd_req_t *req)
         cJSON_AddBoolToObject(response, "restart_required", false);
     }
 
-    esp_err_t ret = web_server_v2_send_json_response(req, response, 200);
+    esp_err_t ret = web_server_send_json_response(req, response, 200);
     cJSON_Delete(response);
     return ret;
 }
@@ -639,9 +639,9 @@ static esp_err_t api_post_network_handler(httpd_req_t *req)
 // GET /api/config/audio - Get audio configuration
 static esp_err_t api_get_audio_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -650,15 +650,15 @@ static esp_err_t api_get_audio_handler(httpd_req_t *req)
     cJSON *audio = cJSON_CreateObject();
     char bck_pin_str[8], ws_pin_str[8], data_in_pin_str[8];
 
-    if (config_manager_v2_get_field(CONFIG_FIELD_AUDIO_BCK_PIN, bck_pin_str, sizeof(bck_pin_str)))
+    if (config_manager_get_field(CONFIG_FIELD_AUDIO_BCK_PIN, bck_pin_str, sizeof(bck_pin_str)))
     {
         cJSON_AddNumberToObject(audio, "bck_pin", atoi(bck_pin_str));
     }
-    if (config_manager_v2_get_field(CONFIG_FIELD_AUDIO_WS_PIN, ws_pin_str, sizeof(ws_pin_str)))
+    if (config_manager_get_field(CONFIG_FIELD_AUDIO_WS_PIN, ws_pin_str, sizeof(ws_pin_str)))
     {
         cJSON_AddNumberToObject(audio, "ws_pin", atoi(ws_pin_str));
     }
-    if (config_manager_v2_get_field(CONFIG_FIELD_AUDIO_DATA_IN_PIN, data_in_pin_str, sizeof(data_in_pin_str)))
+    if (config_manager_get_field(CONFIG_FIELD_AUDIO_DATA_IN_PIN, data_in_pin_str, sizeof(data_in_pin_str)))
     {
         cJSON_AddNumberToObject(audio, "data_in_pin", atoi(data_in_pin_str));
     }
@@ -676,7 +676,7 @@ static esp_err_t api_get_audio_handler(httpd_req_t *req)
 
     cJSON_AddItemToObject(root, "audio", audio);
 
-    esp_err_t ret = web_server_v2_send_json_response(req, root, 200);
+    esp_err_t ret = web_server_send_json_response(req, root, 200);
     cJSON_Delete(root);
     return ret;
 }
@@ -684,9 +684,9 @@ static esp_err_t api_get_audio_handler(httpd_req_t *req)
 // POST /api/config/audio - Update audio configuration (GPIO pins only)
 static esp_err_t api_post_audio_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     char buf[512];
@@ -711,7 +711,7 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req)
     {
         char pin_str[8];
         snprintf(pin_str, sizeof(pin_str), "%d", bck_pin->valueint);
-        if (config_manager_v2_set_field(CONFIG_FIELD_AUDIO_BCK_PIN, pin_str, &result))
+        if (config_manager_set_field(CONFIG_FIELD_AUDIO_BCK_PIN, pin_str, &result))
         {
             changed = true;
         }
@@ -722,7 +722,7 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req)
     {
         char pin_str[8];
         snprintf(pin_str, sizeof(pin_str), "%d", ws_pin->valueint);
-        if (config_manager_v2_set_field(CONFIG_FIELD_AUDIO_WS_PIN, pin_str, &result))
+        if (config_manager_set_field(CONFIG_FIELD_AUDIO_WS_PIN, pin_str, &result))
         {
             changed = true;
         }
@@ -733,7 +733,7 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req)
     {
         char pin_str[8];
         snprintf(pin_str, sizeof(pin_str), "%d", data_in_pin->valueint);
-        if (config_manager_v2_set_field(CONFIG_FIELD_AUDIO_DATA_IN_PIN, pin_str, &result))
+        if (config_manager_set_field(CONFIG_FIELD_AUDIO_DATA_IN_PIN, pin_str, &result))
         {
             changed = true;
         }
@@ -742,12 +742,12 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req)
     // Save configuration if changed
     if (changed)
     {
-        if (!config_manager_v2_save())
+        if (!config_manager_save())
         {
             cJSON *response = cJSON_CreateObject();
             cJSON_AddStringToObject(response, "status", "error");
             cJSON_AddStringToObject(response, "message", "Failed to save audio configuration");
-            esp_err_t ret = web_server_v2_send_json_response(req, response, 500);
+            esp_err_t ret = web_server_send_json_response(req, response, 500);
             cJSON_Delete(response);
             cJSON_Delete(root);
             return ret;
@@ -771,7 +771,7 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req)
         cJSON_AddBoolToObject(response, "restart_required", false);
     }
 
-    esp_err_t ret = web_server_v2_send_json_response(req, response, 200);
+    esp_err_t ret = web_server_send_json_response(req, response, 200);
     cJSON_Delete(response);
     return ret;
 }
@@ -779,14 +779,14 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req)
 // GET /api/config/all - Get all configuration
 static esp_err_t api_get_all_config_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     // Export configuration as JSON from unified config
     char json_buffer[8192];
-    if (!config_manager_v2_export_json(json_buffer, sizeof(json_buffer)))
+    if (!config_manager_export_json(json_buffer, sizeof(json_buffer)))
     {
         httpd_resp_send_500(req);
         return ESP_FAIL;
@@ -799,7 +799,7 @@ static esp_err_t api_get_all_config_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    esp_err_t ret = web_server_v2_send_json_response(req, root, 200);
+    esp_err_t ret = web_server_send_json_response(req, root, 200);
     cJSON_Delete(root);
     return ret;
 }
@@ -807,9 +807,9 @@ static esp_err_t api_get_all_config_handler(httpd_req_t *req)
 // POST /api/config/all - Update multiple configuration fields
 static esp_err_t api_post_all_config_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     char buf[4096];
@@ -827,13 +827,13 @@ static esp_err_t api_post_all_config_handler(httpd_req_t *req)
 
     // Import configuration into unified config
     config_validation_result_t results[10];
-    size_t issue_count = config_manager_v2_import_json(buf, true, results, 10);
+    size_t issue_count = config_manager_import_json(buf, true, results, 10);
 
     cJSON *response = cJSON_CreateObject();
     if (issue_count == 0)
     {
         // Save configuration
-        if (config_manager_v2_save())
+        if (config_manager_save())
         {
             // ✅ Mark that config was updated during captive portal session
             captive_portal_mark_config_updated();
@@ -846,7 +846,7 @@ static esp_err_t api_post_all_config_handler(httpd_req_t *req)
         {
             cJSON_AddStringToObject(response, "status", "error");
             cJSON_AddStringToObject(response, "message", "Failed to save configuration");
-            web_server_v2_send_json_response(req, response, 500);
+            web_server_send_json_response(req, response, 500);
             cJSON_Delete(response);
             cJSON_Delete(root);
             return ESP_FAIL;
@@ -872,7 +872,7 @@ static esp_err_t api_post_all_config_handler(httpd_req_t *req)
 
     cJSON_Delete(root);
 
-    esp_err_t ret = web_server_v2_send_json_response(req, response, (issue_count == 0) ? 200 : 400);
+    esp_err_t ret = web_server_send_json_response(req, response, (issue_count == 0) ? 200 : 400);
     cJSON_Delete(response);
     return ret;
 }
@@ -880,9 +880,9 @@ static esp_err_t api_post_all_config_handler(httpd_req_t *req)
 // GET /api/system/status - Get system status
 static esp_err_t api_get_status_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -906,7 +906,7 @@ static esp_err_t api_get_status_handler(httpd_req_t *req)
         {
             // Fallback to config if WiFi stack query fails
             char ssid[32];
-            if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_SSID, ssid, sizeof(ssid)))
+            if (config_manager_get_field(CONFIG_FIELD_WIFI_SSID, ssid, sizeof(ssid)))
             {
                 cJSON_AddStringToObject(wifi, "ssid", ssid);
             }
@@ -922,8 +922,8 @@ static esp_err_t api_get_status_handler(httpd_req_t *req)
     cJSON *tcp = cJSON_CreateObject();
     cJSON_AddBoolToObject(tcp, "connected", tcp_streamer_is_connected());
     char tcp_ip[16], tcp_port_str[8];
-    if (config_manager_v2_get_field(CONFIG_FIELD_TCP_SERVER_IP, tcp_ip, sizeof(tcp_ip)) &&
-        config_manager_v2_get_field(CONFIG_FIELD_TCP_SERVER_PORT, tcp_port_str, sizeof(tcp_port_str)))
+    if (config_manager_get_field(CONFIG_FIELD_TCP_SERVER_IP, tcp_ip, sizeof(tcp_ip)) &&
+        config_manager_get_field(CONFIG_FIELD_TCP_SERVER_PORT, tcp_port_str, sizeof(tcp_port_str)))
     {
         char server_str[32];
         snprintf(server_str, sizeof(server_str), "%s:%s", tcp_ip, tcp_port_str);
@@ -948,7 +948,7 @@ static esp_err_t api_get_status_handler(httpd_req_t *req)
     cJSON *buffer = cJSON_CreateObject();
     cJSON_AddNumberToObject(buffer, "usage_percent", buffer_manager_usage_percent());
     char buffer_size_str[16];
-    if (config_manager_v2_get_field(CONFIG_FIELD_BUFFER_RING_SIZE, buffer_size_str, sizeof(buffer_size_str)))
+    if (config_manager_get_field(CONFIG_FIELD_BUFFER_RING_SIZE, buffer_size_str, sizeof(buffer_size_str)))
     {
         cJSON_AddNumberToObject(buffer, "size_kb", atoi(buffer_size_str) / 1024);
     }
@@ -961,10 +961,10 @@ static esp_err_t api_get_status_handler(httpd_req_t *req)
     cJSON_AddItemToObject(root, "memory", memory);
 
     // Configuration version
-    cJSON_AddNumberToObject(root, "config_version", config_manager_v2_get_version());
-    cJSON_AddBoolToObject(root, "has_unsaved_changes", config_manager_v2_has_unsaved_changes());
+    cJSON_AddNumberToObject(root, "config_version", config_manager_get_version());
+    cJSON_AddBoolToObject(root, "has_unsaved_changes", config_manager_has_unsaved_changes());
 
-    esp_err_t ret = web_server_v2_send_json_response(req, root, 200);
+    esp_err_t ret = web_server_send_json_response(req, root, 200);
     cJSON_Delete(root);
     return ret;
 }
@@ -972,9 +972,9 @@ static esp_err_t api_get_status_handler(httpd_req_t *req)
 // GET /api/system/info - Get device info
 static esp_err_t api_get_info_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -997,7 +997,7 @@ static esp_err_t api_get_info_handler(httpd_req_t *req)
     cJSON_AddStringToObject(root, "firmware_version", "2.0.0");
     cJSON_AddStringToObject(root, "config_system", "unified_v2");
 
-    esp_err_t ret = web_server_v2_send_json_response(req, root, 200);
+    esp_err_t ret = web_server_send_json_response(req, root, 200);
     cJSON_Delete(root);
     return ret;
 }
@@ -1005,15 +1005,15 @@ static esp_err_t api_get_info_handler(httpd_req_t *req)
 // POST /api/system/restart - Restart device
 static esp_err_t api_post_restart_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     // Save any unsaved changes before restart
-    if (config_manager_v2_has_unsaved_changes())
+    if (config_manager_has_unsaved_changes())
     {
-        if (!config_manager_v2_save())
+        if (!config_manager_save())
         {
             ESP_LOGW(TAG, "Failed to save unsaved changes before restart");
         }
@@ -1023,7 +1023,7 @@ static esp_err_t api_post_restart_handler(httpd_req_t *req)
     cJSON_AddStringToObject(response, "status", "success");
     cJSON_AddStringToObject(response, "message", "Device will restart in 2 seconds");
 
-    web_server_v2_send_json_response(req, response, 200);
+    web_server_send_json_response(req, response, 200);
     cJSON_Delete(response);
 
     // Schedule restart
@@ -1036,20 +1036,20 @@ static esp_err_t api_post_restart_handler(httpd_req_t *req)
 // POST /api/system/factory-reset - Factory reset
 static esp_err_t api_post_factory_reset_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     ESP_LOGI(TAG, "Factory reset requested");
 
-    if (!config_manager_v2_reset_to_factory())
+    if (!config_manager_reset_to_factory())
     {
         cJSON *response = cJSON_CreateObject();
         cJSON_AddStringToObject(response, "status", "error");
         cJSON_AddStringToObject(response, "message", "Failed to reset configuration");
 
-        web_server_v2_send_json_response(req, response, 500);
+        web_server_send_json_response(req, response, 500);
         cJSON_Delete(response);
         return ESP_FAIL;
     }
@@ -1058,7 +1058,7 @@ static esp_err_t api_post_factory_reset_handler(httpd_req_t *req)
     cJSON_AddStringToObject(response, "status", "success");
     cJSON_AddStringToObject(response, "message", "Factory reset complete. Device will restart.");
 
-    web_server_v2_send_json_response(req, response, 200);
+    web_server_send_json_response(req, response, 200);
     cJSON_Delete(response);
 
     vTaskDelay(pdMS_TO_TICKS(2000));
@@ -1070,21 +1070,21 @@ static esp_err_t api_post_factory_reset_handler(httpd_req_t *req)
 // POST /api/system/save - Save configuration
 static esp_err_t api_post_save_config_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     cJSON *response = cJSON_CreateObject();
 
-    if (config_manager_v2_save())
+    if (config_manager_save())
     {
         // ✅ Mark that config was updated during captive portal session
         captive_portal_mark_config_updated();
 
         cJSON_AddStringToObject(response, "status", "success");
         cJSON_AddStringToObject(response, "message", "Configuration saved to NVS successfully.");
-        esp_err_t ret = web_server_v2_send_json_response(req, response, 200);
+        esp_err_t ret = web_server_send_json_response(req, response, 200);
         cJSON_Delete(response);
         return ret;
     }
@@ -1092,7 +1092,7 @@ static esp_err_t api_post_save_config_handler(httpd_req_t *req)
     {
         cJSON_AddStringToObject(response, "status", "error");
         cJSON_AddStringToObject(response, "message", "Failed to save configuration to NVS.");
-        esp_err_t ret = web_server_v2_send_json_response(req, response, 500);
+        esp_err_t ret = web_server_send_json_response(req, response, 500);
         cJSON_Delete(response);
         return ret;
     }
@@ -1101,19 +1101,19 @@ static esp_err_t api_post_save_config_handler(httpd_req_t *req)
 // POST /api/system/load - Load configuration
 static esp_err_t api_post_load_config_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     cJSON *response = cJSON_CreateObject();
 
-    if (config_manager_v2_load())
+    if (config_manager_load())
     {
         cJSON_AddStringToObject(response, "status", "success");
         cJSON_AddStringToObject(response, "message", "Configuration reloaded from NVS. Restart recommended to apply changes.");
         cJSON_AddBoolToObject(response, "restart_required", true);
-        esp_err_t ret = web_server_v2_send_json_response(req, response, 200);
+        esp_err_t ret = web_server_send_json_response(req, response, 200);
         cJSON_Delete(response);
         return ret;
     }
@@ -1121,7 +1121,7 @@ static esp_err_t api_post_load_config_handler(httpd_req_t *req)
     {
         cJSON_AddStringToObject(response, "status", "error");
         cJSON_AddStringToObject(response, "message", "Failed to reload configuration from NVS.");
-        esp_err_t ret = web_server_v2_send_json_response(req, response, 500);
+        esp_err_t ret = web_server_send_json_response(req, response, 500);
         cJSON_Delete(response);
         return ret;
     }
@@ -1130,29 +1130,29 @@ static esp_err_t api_post_load_config_handler(httpd_req_t *req)
 // GET /api/system/validate - Validate current configuration
 static esp_err_t api_get_validate_handler(httpd_req_t *req)
 {
-    if (!web_server_v2_check_auth(req))
+    if (!web_server_check_auth(req))
     {
-        return web_server_v2_send_auth_required(req);
+        return web_server_send_auth_required(req);
     }
 
     cJSON *response = cJSON_CreateObject();
     config_validation_result_t results[10];
-    size_t issue_count = config_manager_v2_validate(results, 10);
+    size_t issue_count = config_manager_validate(results, 10);
 
     if (issue_count == 0)
     {
         cJSON_AddStringToObject(response, "status", "valid");
         cJSON_AddStringToObject(response, "message", "Current configuration is valid");
-        cJSON_AddNumberToObject(response, "version", config_manager_v2_get_version());
+        cJSON_AddNumberToObject(response, "version", config_manager_get_version());
 
         // Add configuration summary
         char ssid[32];
-        if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_SSID, ssid, sizeof(ssid)))
+        if (config_manager_get_field(CONFIG_FIELD_WIFI_SSID, ssid, sizeof(ssid)))
         {
             cJSON *wifi_info = cJSON_CreateObject();
             cJSON_AddStringToObject(wifi_info, "ssid", ssid);
             char use_static_str[8];
-            if (config_manager_v2_get_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_str, sizeof(use_static_str)))
+            if (config_manager_get_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_str, sizeof(use_static_str)))
             {
                 cJSON_AddBoolToObject(wifi_info, "static_ip", (strcmp(use_static_str, "1") == 0));
             }
@@ -1160,15 +1160,15 @@ static esp_err_t api_get_validate_handler(httpd_req_t *req)
         }
 
         char tcp_ip[16], tcp_port_str[8];
-        if (config_manager_v2_get_field(CONFIG_FIELD_TCP_SERVER_IP, tcp_ip, sizeof(tcp_ip)) &&
-            config_manager_v2_get_field(CONFIG_FIELD_TCP_SERVER_PORT, tcp_port_str, sizeof(tcp_port_str)))
+        if (config_manager_get_field(CONFIG_FIELD_TCP_SERVER_IP, tcp_ip, sizeof(tcp_ip)) &&
+            config_manager_get_field(CONFIG_FIELD_TCP_SERVER_PORT, tcp_port_str, sizeof(tcp_port_str)))
         {
             char server_str[32];
             snprintf(server_str, sizeof(server_str), "%s:%s", tcp_ip, tcp_port_str);
             cJSON_AddStringToObject(response, "tcp_server", server_str);
         }
 
-        esp_err_t ret = web_server_v2_send_json_response(req, response, 200);
+        esp_err_t ret = web_server_send_json_response(req, response, 200);
         cJSON_Delete(response);
         return ret;
     }
@@ -1188,7 +1188,7 @@ static esp_err_t api_get_validate_handler(httpd_req_t *req)
         }
         cJSON_AddItemToObject(response, "errors", errors);
 
-        esp_err_t ret = web_server_v2_send_json_response(req, response, 400);
+        esp_err_t ret = web_server_send_json_response(req, response, 400);
         cJSON_Delete(response);
         return ret;
     }
@@ -1252,7 +1252,7 @@ static esp_err_t serve_embedded_file(httpd_req_t *req, const uint8_t *start, con
     if (file_size > 0 && start[file_size - 1] == '\0')
         file_size--; // Remove null terminator
     const char *mime_type = get_mime_type(path);
-    web_server_v2_add_cors_headers(req);
+    web_server_add_cors_headers(req);
     httpd_resp_set_type(req, mime_type);
     httpd_resp_send(req, (const char *)start, file_size);
     return ESP_OK;
@@ -1325,7 +1325,7 @@ static esp_err_t js_network_handler(httpd_req_t *req)
 }
 
 // Initialize web server v2
-bool web_server_v2_init(void)
+bool web_server_init(void)
 {
     if (server != NULL)
     {
@@ -1428,12 +1428,12 @@ bool web_server_v2_init(void)
     return true;
 }
 
-bool web_server_v2_is_running(void)
+bool web_server_is_running(void)
 {
     return (server != NULL);
 }
 
-void web_server_v2_deinit(void)
+void web_server_deinit(void)
 {
     if (server != NULL)
     {
@@ -1443,7 +1443,7 @@ void web_server_v2_deinit(void)
     }
 }
 
-httpd_handle_t web_server_v2_get_handle(void)
+httpd_handle_t web_server_get_handle(void)
 {
     return server;
 }

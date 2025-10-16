@@ -13,8 +13,8 @@
 #include "modules/tcp_streamer.h"
 #include "modules/udp_streamer.h"
 #include "modules/buffer_manager.h"
-#include "modules/config_manager_v2.h"
-#include "modules/web_server_v2.h"
+#include "modules/config_manager.h"
+#include "modules/web_server.h"
 #include "modules/captive_portal.h"
 #include "modules/performance_monitor.h"
 
@@ -624,7 +624,7 @@ static void start_captive_portal(bool with_timeout)
         ESP_LOGI(TAG, "Captive portal active. Connect to '%s' to configure.", CAPTIVE_PORTAL_SSID);
 
         // Initialize web server for configuration in AP mode
-        if (web_server_v2_init())
+        if (web_server_init())
         {
             ESP_LOGI(TAG, "Web configuration v2 available at http://192.168.4.1");
         }
@@ -661,7 +661,7 @@ static void start_captive_portal(bool with_timeout)
         }
 
         captive_portal_stop();
-        web_server_v2_deinit();
+        web_server_deinit();
 
         // ✅ CRITICAL FIX: After captive portal closes, check if NEW config was submitted
         if (captive_portal_config_updated())
@@ -751,7 +751,7 @@ extern "C" void app_main(void)
     esp_task_wdt_reset();
     // Initialize configuration manager v2
     ESP_LOGI(TAG, "Initializing configuration manager v2...");
-    if (!config_manager_v2_init())
+    if (!config_manager_init())
     {
         ESP_LOGE(TAG, "CRITICAL: Config manager v2 init failed, rebooting...");
         // ✅ Feed watchdog during delay to prevent timeout
@@ -764,7 +764,7 @@ extern "C" void app_main(void)
     }
 
     // Load configuration from NVS (or defaults on first boot)
-    if (!config_manager_v2_load())
+    if (!config_manager_load())
     {
         ESP_LOGE(TAG, "CRITICAL: Failed to load configuration, rebooting...");
         // ✅ Feed watchdog during delay to prevent timeout
@@ -776,10 +776,10 @@ extern "C" void app_main(void)
         esp_restart();
     }
 
-    if (config_manager_v2_is_first_boot())
+    if (config_manager_is_first_boot())
     {
         ESP_LOGI(TAG, "First boot detected - using default configuration");
-        if (!config_manager_v2_save())
+        if (!config_manager_save())
         {
             ESP_LOGE(TAG, "CRITICAL: Failed to save default configuration, rebooting...");
             // ✅ Feed watchdog during delay to prevent timeout
@@ -821,7 +821,7 @@ extern "C" void app_main(void)
                 ESP_LOGI(TAG, "WiFi connected successfully!");
 
                 // Check if this is first boot or needs configuration
-                if (config_manager_v2_is_first_boot() || !captive_portal_is_configured())
+                if (config_manager_is_first_boot() || !captive_portal_is_configured())
                 {
                     ESP_LOGI(TAG, "Configuration needed, starting captive portal");
                     start_captive_portal(true);
@@ -868,7 +868,7 @@ extern "C" void app_main(void)
 
     // Initialize web server
     ESP_LOGI(TAG, "Initializing web server v2...");
-    if (!web_server_v2_init())
+    if (!web_server_init())
     {
         ESP_LOGW(TAG, "Web server v2 init failed, continuing without web UI");
     }

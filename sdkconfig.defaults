@@ -30,8 +30,10 @@ CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=n
 CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n
 
 # Slightly larger TCP buffers (safe for no-PSRAM boards)
-CONFIG_LWIP_TCP_SND_BUF_DEFAULT=12288   # 12 KB send buffer
-CONFIG_LWIP_TCP_WND_DEFAULT=16384       # 16 KB receive window
+# 12 KB send buffer
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=12288
+# 16 KB receive window
+CONFIG_LWIP_TCP_WND_DEFAULT=16384
 # (Default MSS is already 1440; keep it unless you know you need to change it)
 
 # Enable FreeRTOS runtime statistics for CPU profiling

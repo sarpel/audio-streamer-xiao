@@ -1,5 +1,5 @@
 #include "captive_portal.h"
-#include "config_manager_v2.h"
+#include "config_manager.h"
 #include "config_schema.h"
 #include "../config.h"
 #include "esp_log.h"
@@ -194,14 +194,14 @@ void captive_portal_stop(void)
 bool captive_portal_is_configured(void)
 {
     // First boot means definitely not configured via captive portal
-    if (config_manager_v2_is_first_boot())
+    if (config_manager_is_first_boot())
     {
         return false;
     }
 
     // Get unified configuration
     unified_config_t config;
-    if (!config_manager_v2_get_config(&config))
+    if (!config_manager_get_config(&config))
     {
         return false;
     }

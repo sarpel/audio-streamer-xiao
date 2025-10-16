@@ -208,6 +208,7 @@ typedef enum
 #define ARP_TABLE_SIZE 10  // ARP table size
 
 // Performance Monitoring Configuration
-#define MAX_ALERTS 100            // Maximum alerts to store
+#define MAX_ALERTS 100 // Maximum alerts to store
+// Note: HISTORY_INTERVAL_MS and MAX_HISTORY_ENTRIES are defined in performance_monitor.h
 
 #endif // CONFIG_H
