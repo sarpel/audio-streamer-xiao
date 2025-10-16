@@ -14,7 +14,7 @@
 
 // Captive Portal Configuration
 #define CAPTIVE_PORTAL_SSID "AudioStreamer-Setup"
-#define CAPTIVE_PORTAL_TIMEOUT_SEC 300 // 5 minutes before switching to normal mode
+#define CAPTIVE_PORTAL_TIMEOUT_SEC 300 // 5 minutes before switching to normal mode (3-strike system)
 
 // Static IP Configuration (optional, set to 0,0,0,0 for DHCP)
 #define STATIC_IP_ADDR "0.0.0.0"
