@@ -112,7 +112,7 @@ static void i2s_reader_task(void *arg)
                 // Reinitialize I2S
                 i2s_handler_deinit();
                 // ✅ Feed watchdog during I2S reinit delay
-                for (int j = 0; j < 20; j++)  // 20 × 50ms = 1 second
+                for (int j = 0; j < 20; j++) // 20 × 50ms = 1 second
                 {
                     esp_task_wdt_reset();
                     vTaskDelay(pdMS_TO_TICKS(50));
@@ -241,7 +241,7 @@ static void network_sender_task(void *arg)
                         {
                             ESP_LOGE(TAG, "Max TCP reconnect attempts reached, rebooting...");
                             // ✅ Feed watchdog during reboot delay
-                            for (int j = 0; j < 20; j++)  // 20 × 50ms = 1 second
+                            for (int j = 0; j < 20; j++) // 20 × 50ms = 1 second
                             {
                                 esp_task_wdt_reset();
                                 vTaskDelay(pdMS_TO_TICKS(50));
@@ -293,7 +293,7 @@ static void network_sender_task(void *arg)
                         {
                             ESP_LOGE(TAG, "Max UDP reconnect attempts reached, rebooting...");
                             // ✅ Feed watchdog during reboot delay
-                            for (int j = 0; j < 20; j++)  // 20 × 50ms = 1 second
+                            for (int j = 0; j < 20; j++) // 20 × 50ms = 1 second
                             {
                                 esp_task_wdt_reset();
                                 vTaskDelay(pdMS_TO_TICKS(50));
@@ -347,6 +347,15 @@ static void watchdog_task(void *arg)
 
     while (1)
     {
+        // ✅ SKIP watchdog checks during captive portal - let user have time to configure
+        if (captive_portal_is_active())
+        {
+            // Feed the system watchdog periodically but skip timeout checks
+            esp_task_wdt_reset();
+            vTaskDelay(pdMS_TO_TICKS(5000)); // Check every 5 seconds
+            continue;
+        }
+
         bool wifi_connected = network_manager_is_connected();
 
         // Detect WiFi state change
@@ -614,11 +623,9 @@ static void start_captive_portal(bool with_timeout)
             ESP_LOGI(TAG, "Web configuration v2 available at http://192.168.4.1");
         }
 
-        // ✅ 5-minute timeout with watchdog adjustments
+        // ✅ 5-minute timeout with watchdog monitoring
         uint32_t start_tick = xTaskGetTickCount();
         uint32_t timeout_ticks = with_timeout ? pdMS_TO_TICKS(5 * 60 * 1000) : portMAX_DELAY; // 5 minutes
-        uint32_t watchdog_feed_interval = pdMS_TO_TICKS(30 * 1000); // Feed watchdog every 30 seconds
-        uint32_t last_watchdog_feed = start_tick;
 
         ESP_LOGI(TAG, "Captive portal will stay active for 5 minutes or until configuration received");
 
@@ -626,19 +633,15 @@ static void start_captive_portal(bool with_timeout)
         {
             vTaskDelay(pdMS_TO_TICKS(1000));
 
-            // ✅ Feed watchdog periodically to prevent timeout during captive portal
-            uint32_t current_tick = xTaskGetTickCount();
-            if ((current_tick - last_watchdog_feed) >= watchdog_feed_interval)
-            {
-                esp_task_wdt_reset();
-                last_watchdog_feed = current_tick;
-                ESP_LOGD(TAG, "Watchdog fed during captive portal");
-            }
+            // ✅ CRITICAL: Feed watchdog every iteration to prevent TWDT timeout
+            esp_task_wdt_reset();
 
-            // Check if configuration was saved
-            if (captive_portal_is_configured())
+            uint32_t current_tick = xTaskGetTickCount();
+
+            // ✅ CRITICAL FIX: Check if NEW config was submitted (not just if old config exists)
+            if (captive_portal_config_updated())
             {
-                ESP_LOGI(TAG, "Configuration received, stopping captive portal");
+                ESP_LOGI(TAG, "New configuration received, stopping captive portal");
                 break;
             }
 
@@ -654,9 +657,39 @@ static void start_captive_portal(bool with_timeout)
         captive_portal_stop();
         web_server_v2_deinit();
 
-        if (!captive_portal_is_configured() && with_timeout)
+        // ✅ CRITICAL FIX: After captive portal closes, check if NEW config was submitted
+        if (captive_portal_config_updated())
         {
-            ESP_LOGW(TAG, "Captive portal 5-minute timeout reached");
+            ESP_LOGI(TAG, "New configuration submitted, resetting failure counter and attempting WiFi...");
+            network_manager_reset_failure_count();
+            network_manager_resume_trials();
+
+            // ✅ Give WiFi a chance to connect with new config
+            ESP_LOGI(TAG, "Waiting for WiFi connection with new configuration...");
+            int wifi_retry = 0;
+            while (!network_manager_is_connected() && wifi_retry < 30) // 15 seconds
+            {
+                vTaskDelay(pdMS_TO_TICKS(500));
+                wifi_retry++;
+                if (wifi_retry % 4 == 0)
+                {
+                    esp_task_wdt_reset();
+                    ESP_LOGI(TAG, "Connecting to WiFi... (%d/15s)", wifi_retry / 2);
+                }
+            }
+
+            if (network_manager_is_connected())
+            {
+                ESP_LOGI(TAG, "WiFi connected successfully with new configuration!");
+            }
+            else
+            {
+                ESP_LOGW(TAG, "WiFi connection failed, will retry in background");
+            }
+        }
+        else if (!captive_portal_is_configured() && with_timeout)
+        {
+            ESP_LOGW(TAG, "Captive portal 5-minute timeout reached without configuration");
 
             // ✅ Resume WiFi trials after timeout
             network_manager_resume_trials();
@@ -664,18 +697,12 @@ static void start_captive_portal(bool with_timeout)
 
             ESP_LOGI(TAG, "WiFi trials resumed - will continue attempting connection forever");
         }
-        else if (captive_portal_is_configured())
-        {
-            ESP_LOGI(TAG, "Configuration complete, resetting failure counter and continuing...");
-            network_manager_reset_failure_count();
-            // ✅ Device continues without reboot - captive portal exits normally
-        }
     }
     else
     {
         ESP_LOGE(TAG, "CRITICAL: Could not start captive portal, rebooting in 5 seconds...");
         // ✅ Feed watchdog during delay to prevent timeout
-        for (int i = 0; i < 100; i++)  // 100 × 50ms = 5 seconds
+        for (int i = 0; i < 100; i++) // 100 × 50ms = 5 seconds
         {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(50));
@@ -706,7 +733,7 @@ extern "C" void app_main(void)
     {
         ESP_LOGE(TAG, "CRITICAL: NVS flash init failed: %s, rebooting...", esp_err_to_name(ret));
         // ✅ Feed watchdog during delay to prevent timeout
-        for (int i = 0; i < 100; i++)  // 100 × 50ms = 5 seconds
+        for (int i = 0; i < 100; i++) // 100 × 50ms = 5 seconds
         {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(50));
@@ -722,7 +749,7 @@ extern "C" void app_main(void)
     {
         ESP_LOGE(TAG, "CRITICAL: Config manager v2 init failed, rebooting...");
         // ✅ Feed watchdog during delay to prevent timeout
-        for (int i = 0; i < 100; i++)  // 100 × 50ms = 5 seconds
+        for (int i = 0; i < 100; i++) // 100 × 50ms = 5 seconds
         {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(50));
@@ -735,7 +762,7 @@ extern "C" void app_main(void)
     {
         ESP_LOGE(TAG, "CRITICAL: Failed to load configuration, rebooting...");
         // ✅ Feed watchdog during delay to prevent timeout
-        for (int i = 0; i < 100; i++)  // 100 × 50ms = 5 seconds
+        for (int i = 0; i < 100; i++) // 100 × 50ms = 5 seconds
         {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(50));
@@ -846,7 +873,7 @@ extern "C" void app_main(void)
     {
         ESP_LOGE(TAG, "CRITICAL: Buffer init failed, rebooting...");
         // ✅ Feed watchdog during delay to prevent timeout
-        for (int i = 0; i < 100; i++)  // 100 × 50ms = 5 seconds
+        for (int i = 0; i < 100; i++) // 100 × 50ms = 5 seconds
         {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(50));
@@ -882,7 +909,7 @@ extern "C" void app_main(void)
     {
         ESP_LOGE(TAG, "CRITICAL: I2S init failed, rebooting...");
         // ✅ Feed watchdog during delay to prevent timeout
-        for (int i = 0; i < 100; i++)  // 100 × 50ms = 5 seconds
+        for (int i = 0; i < 100; i++) // 100 × 50ms = 5 seconds
         {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(50));

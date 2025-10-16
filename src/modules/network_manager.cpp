@@ -4,6 +4,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_sntp.h"
+#include "esp_task_wdt.h"
 // #include "mdns.h"  // TODO: Add mDNS support when available
 #include "nvs_flash.h"
 #include "lwip/err.h"
@@ -15,9 +16,9 @@ static const char *TAG = "NETWORK_MANAGER";
 static bool wifi_connected = false;
 static bool ntp_synced = false;
 
-static uint32_t wifi_disconnect_count = 0; // ✅ Add counter
+static uint32_t wifi_disconnect_count = 0;    // ✅ Add counter
 static uint32_t wifi_connection_failures = 0; // ✅ 3-strike counter for initial failures
-static bool wifi_trials_paused = false; // ✅ Flag to pause WiFi during captive portal
+static bool wifi_trials_paused = false;       // ✅ Flag to pause WiFi during captive portal
 static const uint32_t MAX_DISCONNECT_BEFORE_REBOOT = 20;
 static const uint32_t MAX_INITIAL_FAILURES = 3; // ✅ 3 strikes before captive portal
 
@@ -68,7 +69,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
         wifi_connected = true;
-        wifi_disconnect_count = 0; // ✅ Reset on successful connection
+        wifi_disconnect_count = 0;    // ✅ Reset on successful connection
         wifi_connection_failures = 0; // ✅ Reset initial failure counter
     }
 }
@@ -304,11 +305,18 @@ bool network_manager_init_ntp(void)
     esp_sntp_init();
 
     // Wait for time sync (timeout 10 seconds)
+    // ✅ CRITICAL FIX: Feed watchdog during NTP sync wait to prevent TWDT timeout
     int retry_count = 0;
     while (!ntp_synced && retry_count < WIFI_CONNECT_MAX_RETRIES)
     {
         vTaskDelay(pdMS_TO_TICKS(500));
         retry_count++;
+
+        // Feed watchdog every second (2 iterations)
+        if (retry_count % 2 == 0)
+        {
+            esp_task_wdt_reset();
+        }
     }
 
     if (!ntp_synced)

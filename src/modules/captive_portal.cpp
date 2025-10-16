@@ -16,6 +16,7 @@
 
 static const char *TAG = "CAPTIVE_PORTAL";
 static bool portal_active = false;
+static bool config_updated_this_session = false; // ✅ NEW: Track if config was updated during THIS portal session
 static esp_netif_t *ap_netif = NULL;
 
 // Simple DNS server for captive portal
@@ -98,6 +99,9 @@ bool captive_portal_init(void)
         return true;
     }
 
+    // ✅ CRITICAL FIX: Clear update flag when portal starts
+    // This prevents old config in NVS from triggering immediate exit
+    config_updated_this_session = false;
     ESP_LOGI(TAG, "Starting captive portal...");
 
     // Stop WiFi if it's already running from a failed connection attempt
@@ -214,4 +218,21 @@ bool captive_portal_is_configured(void)
     }
 
     return true;
+}
+
+bool captive_portal_config_updated(void)
+{
+    return config_updated_this_session;
+}
+
+void captive_portal_clear_update_flag(void)
+{
+    config_updated_this_session = false;
+    ESP_LOGD(TAG, "Config update flag cleared");
+}
+
+void captive_portal_mark_config_updated(void)
+{
+    config_updated_this_session = true;
+    ESP_LOGI(TAG, "New configuration received during this portal session");
 }
