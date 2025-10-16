@@ -67,6 +67,13 @@ esp_err_t web_server_v2_send_auth_required(httpd_req_t *req)
 
 bool web_server_v2_check_auth(httpd_req_t *req)
 {
+    // Validate request pointer
+    if (!req)
+    {
+        ESP_LOGE(TAG, "NULL request pointer in auth check");
+        return false;
+    }
+
     // Get stored credentials from unified configuration
     char username[32];
     char password[64];
@@ -77,8 +84,6 @@ bool web_server_v2_check_auth(httpd_req_t *req)
         ESP_LOGW(TAG, "Failed to get auth config");
         return false;
     }
-
-    ESP_LOGI(TAG, "Stored credentials - username: '%s', password: '%s'", username, password);
 
     // Get Authorization header
     char auth_header[256];
@@ -122,18 +127,12 @@ bool web_server_v2_check_auth(httpd_req_t *req)
     const char *req_username = (const char *)decoded;
     const char *req_password = colon + 1;
 
-    ESP_LOGI(TAG, "Request credentials - username: '%s', password: '%s'", req_username, req_password);
-
     // Compare credentials
     bool valid = (strcmp(req_username, username) == 0 && strcmp(req_password, password) == 0);
 
     if (!valid)
     {
-        ESP_LOGW(TAG, "Invalid credentials - mismatch!");
-    }
-    else
-    {
-        ESP_LOGI(TAG, "Authentication successful");
+        ESP_LOGD(TAG, "Authentication failed for user: %s", req_username);
     }
 
     return valid;
@@ -1158,7 +1157,7 @@ bool web_server_v2_init(void)
     config.max_uri_handlers = 50; // API endpoints + static files + OTA + OPTIONS (added /api/config/wifi)
     config.max_open_sockets = 4;
     config.lru_purge_enable = true;
-    config.stack_size = 8192;
+    config.stack_size = 12288; // Increased from 8192 to prevent stack overflow
 
     ESP_LOGI(TAG, "Starting web server v2 on port %d", config.server_port);
 
@@ -1213,22 +1212,22 @@ bool web_server_v2_init(void)
 
     // ✅ Register static file handlers (HTML, CSS, JS) for web UI
     const httpd_uri_t static_files[] = {
-        {.uri = "/", .method = HTTP_GET, .handler = root_handler, .user_ctx = NULL},
-        {.uri = "/index.html", .method = HTTP_GET, .handler = root_handler, .user_ctx = NULL},
-        {.uri = "/config.html", .method = HTTP_GET, .handler = config_html_handler, .user_ctx = NULL},
-        {.uri = "/monitor.html", .method = HTTP_GET, .handler = monitor_html_handler, .user_ctx = NULL},
-        {.uri = "/ota.html", .method = HTTP_GET, .handler = ota_html_handler, .user_ctx = NULL},
-        {.uri = "/logs.html", .method = HTTP_GET, .handler = logs_html_handler, .user_ctx = NULL},
-        {.uri = "/network.html", .method = HTTP_GET, .handler = network_html_handler, .user_ctx = NULL},
-        {.uri = "/css/style.css", .method = HTTP_GET, .handler = css_style_handler, .user_ctx = NULL},
-        {.uri = "/js/api.js", .method = HTTP_GET, .handler = js_api_handler, .user_ctx = NULL},
-        {.uri = "/js/utils.js", .method = HTTP_GET, .handler = js_utils_handler, .user_ctx = NULL},
-        {.uri = "/js/app.js", .method = HTTP_GET, .handler = js_app_handler, .user_ctx = NULL},
-        {.uri = "/js/config.js", .method = HTTP_GET, .handler = js_config_handler, .user_ctx = NULL},
-        {.uri = "/js/monitor.js", .method = HTTP_GET, .handler = js_monitor_handler, .user_ctx = NULL},
-        {.uri = "/js/ota.js", .method = HTTP_GET, .handler = js_ota_handler, .user_ctx = NULL},
-        {.uri = "/js/logs.js", .method = HTTP_GET, .handler = js_logs_handler, .user_ctx = NULL},
-        {.uri = "/js/network.js", .method = HTTP_GET, .handler = js_network_handler, .user_ctx = NULL},
+        {.uri = "/", .method = HTTP_GET, .handler = root_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/index.html", .method = HTTP_GET, .handler = root_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/config.html", .method = HTTP_GET, .handler = config_html_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/monitor.html", .method = HTTP_GET, .handler = monitor_html_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/ota.html", .method = HTTP_GET, .handler = ota_html_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/logs.html", .method = HTTP_GET, .handler = logs_html_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/network.html", .method = HTTP_GET, .handler = network_html_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/css/style.css", .method = HTTP_GET, .handler = css_style_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/js/api.js", .method = HTTP_GET, .handler = js_api_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/js/utils.js", .method = HTTP_GET, .handler = js_utils_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/js/app.js", .method = HTTP_GET, .handler = js_app_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/js/config.js", .method = HTTP_GET, .handler = js_config_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/js/monitor.js", .method = HTTP_GET, .handler = js_monitor_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/js/ota.js", .method = HTTP_GET, .handler = js_ota_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/js/logs.js", .method = HTTP_GET, .handler = js_logs_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
+        {.uri = "/js/network.js", .method = HTTP_GET, .handler = js_network_handler, .user_ctx = NULL, .is_websocket = false, .handle_ws_control_frames = false, .supported_subprotocol = NULL},
     };
 
     for (size_t i = 0; i < sizeof(static_files) / sizeof(static_files[0]); i++)

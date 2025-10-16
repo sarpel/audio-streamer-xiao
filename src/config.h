@@ -29,7 +29,7 @@
 
 // UDP Server Configuration
 #define UDP_SERVER_IP "192.168.1.50" // Default to same as TCP
-#define UDP_SERVER_PORT 9001          // Different port to avoid conflicts
+#define UDP_SERVER_PORT 9001         // Different port to avoid conflicts
 
 // NTP Configuration
 #define NTP_SERVER "pool.ntp.org"
@@ -41,14 +41,16 @@
 #define I2S_SD_GPIO 1   // DATA IN (SD)
 
 // Audio format options
-typedef enum {
+typedef enum
+{
     AUDIO_FORMAT_PCM_8BIT = 0,
     AUDIO_FORMAT_PCM_16BIT = 1,
     AUDIO_FORMAT_PCM_24BIT = 2,
     AUDIO_FORMAT_PCM_32BIT = 3
 } audio_format_t;
 
-typedef enum {
+typedef enum
+{
     AUDIO_SAMPLE_RATE_8K = 8000,
     AUDIO_SAMPLE_RATE_11K = 11025,
     AUDIO_SAMPLE_RATE_16K = 16000,
@@ -59,7 +61,8 @@ typedef enum {
     AUDIO_SAMPLE_RATE_96K = 96000
 } audio_sample_rate_t;
 
-typedef enum {
+typedef enum
+{
     AUDIO_CHANNELS_MONO = 1,
     AUDIO_CHANNELS_STEREO = 2
 } audio_channels_t;
@@ -91,7 +94,7 @@ typedef enum {
 // Buffer Configuration
 #define I2S_DMA_BUF_COUNT 8
 #define I2S_DMA_BUF_LEN 512          // 512 samples per DMA buffer (1024 for better resilience)
-#define RING_BUFFER_SIZE (96 * 1024) // 128 KB in internal SRAM (ESP32-S3 has 512KB total)
+#define RING_BUFFER_SIZE (48 * 1024) // 48 KB - reduced to fit fragmented memory after WiFi init
 
 // Task Configuration
 #define I2S_READER_STACK_SIZE 4096
@@ -155,14 +158,14 @@ typedef enum {
 #endif
 
 // UDP Specific Configuration
-#define UDP_PACKET_MAX_SIZE 1472  // Safe UDP packet size (under Ethernet MTU)
-#define UDP_SEND_TIMEOUT_MS 100   // Timeout for UDP sends
-#define UDP_BUFFER_COUNT 8        // Number of UDP packets to buffer
+#define UDP_PACKET_MAX_SIZE 1472 // Safe UDP packet size (under Ethernet MTU)
+#define UDP_SEND_TIMEOUT_MS 100  // Timeout for UDP sends
+#define UDP_BUFFER_COUNT 8       // Number of UDP packets to buffer
 
 // Adaptive Buffering Configuration
 #define ADAPTIVE_BUFFERING_ENABLED 1
-#define ADAPTIVE_BUFFER_MIN_SIZE (32 * 1024)    // 32KB minimum
-#define ADAPTIVE_BUFFER_MAX_SIZE (256 * 1024)   // 256KB maximum
+#define ADAPTIVE_BUFFER_MIN_SIZE (32 * 1024)     // 32KB minimum
+#define ADAPTIVE_BUFFER_MAX_SIZE (256 * 1024)    // 256KB maximum
 #define ADAPTIVE_BUFFER_DEFAULT_SIZE (96 * 1024) // 96KB default
 #define ADAPTIVE_THRESHOLD_LOW 30                // Resize down if usage < 30%
 #define ADAPTIVE_THRESHOLD_HIGH 80               // Resize up if usage > 80%
@@ -174,39 +177,39 @@ typedef enum {
 
 // TCP Optimization
 #define TCP_KEEPALIVE_ENABLED 1
-#define TCP_KEEPALIVE_IDLE_SEC 30      // Start keepalive after 30s
-#define TCP_KEEPALIVE_INTERVAL_SEC 5    // Send keepalive every 5s
-#define TCP_KEEPALIVE_COUNT 3           // 3 keepalive attempts before giving up
-#define TCP_NODELAY_ENABLED 1           // Disable Nagle's algorithm for low latency
-#define TCP_TX_BUFFER_SIZE 32768        // 32KB TCP send buffer
-#define TCP_RX_BUFFER_SIZE 32768        // 32KB TCP receive buffer
+#define TCP_KEEPALIVE_IDLE_SEC 30    // Start keepalive after 30s
+#define TCP_KEEPALIVE_INTERVAL_SEC 5 // Send keepalive every 5s
+#define TCP_KEEPALIVE_COUNT 3        // 3 keepalive attempts before giving up
+#define TCP_NODELAY_ENABLED 1        // Disable Nagle's algorithm for low latency
+#define TCP_TX_BUFFER_SIZE 32768     // 32KB TCP send buffer
+#define TCP_RX_BUFFER_SIZE 32768     // 32KB TCP receive buffer
 
 // UDP Optimization
-#define UDP_TX_BUFFER_SIZE 65536        // 64KB UDP send buffer
-#define UDP_RX_BUFFER_SIZE 65536        // 64KB UDP receive buffer
+#define UDP_TX_BUFFER_SIZE 65536 // 64KB UDP send buffer
+#define UDP_RX_BUFFER_SIZE 65536 // 64KB UDP receive buffer
 
 // WiFi Optimization
-#define WIFI_POWER_SAVE_DISABLED 1      // Disable power save for better performance
-#define WIFI_STATIC_NVS_ENABLED 1       // Enable static NVS allocation
-#define WIFI_DYNAMIC_TX_BUF_NUM 16      // Number of dynamic TX buffers
-#define WIFI_STATIC_TX_BUF_NUM 8       // Number of static TX buffers
-#define WIFI_DYNAMIC_RX_BUF_NUM 16      // Number of dynamic RX buffers
-#define WIFI_STATIC_RX_BUF_NUM 8       // Number of static RX buffers
-#define WIFI_RX_MGMT_BUF_NUM 10        // Number of management buffers
-#define WIFI_RX_BA_WIN 8                // Block ACK window size
+#define WIFI_POWER_SAVE_DISABLED 1 // Disable power save for better performance
+#define WIFI_STATIC_NVS_ENABLED 1  // Enable static NVS allocation
+#define WIFI_DYNAMIC_TX_BUF_NUM 16 // Number of dynamic TX buffers
+#define WIFI_STATIC_TX_BUF_NUM 8   // Number of static TX buffers
+#define WIFI_DYNAMIC_RX_BUF_NUM 16 // Number of dynamic RX buffers
+#define WIFI_STATIC_RX_BUF_NUM 8   // Number of static RX buffers
+#define WIFI_RX_MGMT_BUF_NUM 10    // Number of management buffers
+#define WIFI_RX_BA_WIN 8           // Block ACK window size
 
 // Network Performance Tuning
-#define NETWORK_TASK_STACK_SIZE 4096    // Network task stack size
-#define NETWORK_EVENT_QUEUE_SIZE 16     // Network event queue size
+#define NETWORK_TASK_STACK_SIZE 4096        // Network task stack size
+#define NETWORK_EVENT_QUEUE_SIZE 16         // Network event queue size
 #define NETWORK_EVENT_QUEUE_TIMEOUT_MS 1000 // Event queue timeout
 
 // IP Configuration
-#define IP_FRAGMENT_TTL 64              // IP fragment TTL
-#define ARP_TABLE_SIZE 10               // ARP table size
+#define IP_FRAGMENT_TTL 64 // IP fragment TTL
+#define ARP_TABLE_SIZE 10  // ARP table size
 
 // Performance Monitoring Configuration
-#define HISTORY_INTERVAL_MS 10000       // 10 seconds between samples
-#define MAX_HISTORY_ENTRIES 720         // 2 hours at 10-second intervals
-#define MAX_ALERTS 100                  // Maximum alerts to store
+#define HISTORY_INTERVAL_MS 10000 // 10 seconds between samples
+#define MAX_HISTORY_ENTRIES 720   // 2 hours at 10-second intervals
+#define MAX_ALERTS 100            // Maximum alerts to store
 
 #endif // CONFIG_H
