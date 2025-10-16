@@ -64,4 +64,34 @@ bool network_manager_init_mdns(void);
  */
 void network_manager_deinit(void);
 
+/**
+ * Check if 3-strike threshold reached for captive portal activation
+ *
+ * @return true if captive portal should be started, false otherwise
+ */
+bool network_manager_should_start_captive_portal(void);
+
+/**
+ * Pause WiFi trials during captive portal configuration
+ */
+void network_manager_pause_trials(void);
+
+/**
+ * Resume WiFi trials after captive portal timeout
+ */
+void network_manager_resume_trials(void);
+
+/**
+ * Get current WiFi connection failure count
+ *
+ * @return Number of consecutive connection failures
+ */
+uint32_t network_manager_get_failure_count(void);
+
+/**
+ * Reset WiFi connection failure counter
+ * Called after successful captive portal configuration
+ */
+void network_manager_reset_failure_count(void);
+
 #endif // NETWORK_MANAGER_H

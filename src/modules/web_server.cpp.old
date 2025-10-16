@@ -1,11 +1,13 @@
+#include "../config.h"
 #include "web_server.h"
-#include "config_manager.h"
+#include "config_manager_v2.h"
 #include "network_manager.h"
 #include "tcp_streamer.h"
+#include "udp_streamer.h"
 #include "buffer_manager.h"
 #include "i2s_handler.h"
 #include "ota_handler.h"
-#include "../config.h"
+#include "performance_monitor.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
@@ -103,9 +105,12 @@ static esp_err_t send_auth_required(httpd_req_t *req)
 
 bool web_server_check_auth(httpd_req_t *req)
 {
-    // Get stored credentials
-    auth_config_data_t auth;
-    if (!config_manager_get_auth(&auth))
+    // Get stored credentials from unified configuration
+    char username[32];
+    char password[64];
+
+    if (!config_manager_v2_get_field(CONFIG_FIELD_AUTH_USERNAME, username, sizeof(username)) ||
+        !config_manager_v2_get_field(CONFIG_FIELD_AUTH_PASSWORD, password, sizeof(password)))
     {
         ESP_LOGW(TAG, "Failed to get auth config");
         return false;
@@ -150,11 +155,11 @@ bool web_server_check_auth(httpd_req_t *req)
     }
 
     *colon = '\0';
-    const char *username = (const char *)decoded;
-    const char *password = colon + 1;
+    const char *req_username = (const char *)decoded;
+    const char *req_password = colon + 1;
 
     // Compare credentials
-    bool valid = (strcmp(username, auth.username) == 0 && strcmp(password, auth.password) == 0);
+    bool valid = (strcmp(req_username, username) == 0 && strcmp(req_password, password) == 0);
 
     if (!valid)
     {
@@ -263,22 +268,33 @@ static esp_err_t api_get_wifi_handler(httpd_req_t *req)
         return send_auth_required(req);
     }
 
-    wifi_config_data_t wifi;
-    if (!config_manager_get_wifi(&wifi))
+    // Get WiFi configuration from unified config
+    char ssid[32], password[64], static_ip[16], gateway[16], subnet[16];
+    char dns_primary[16], dns_secondary[16];
+    char use_static_ip_str[8];
+
+    if (!config_manager_v2_get_field(CONFIG_FIELD_WIFI_SSID, ssid, sizeof(ssid)) ||
+        !config_manager_v2_get_field(CONFIG_FIELD_WIFI_PASSWORD, password, sizeof(password)) ||
+        !config_manager_v2_get_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip_str, sizeof(use_static_ip_str)) ||
+        !config_manager_v2_get_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip, sizeof(static_ip)) ||
+        !config_manager_v2_get_field(CONFIG_FIELD_WIFI_GATEWAY, gateway, sizeof(gateway)) ||
+        !config_manager_v2_get_field(CONFIG_FIELD_WIFI_SUBNET, subnet, sizeof(subnet)) ||
+        !config_manager_v2_get_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary, sizeof(dns_primary)) ||
+        !config_manager_v2_get_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary, sizeof(dns_secondary)))
     {
         httpd_resp_send_500(req);
         return ESP_FAIL;
     }
 
     cJSON *root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "ssid", wifi.ssid);
+    cJSON_AddStringToObject(root, "ssid", ssid);
     cJSON_AddStringToObject(root, "password", "********"); // Don't expose password
-    cJSON_AddBoolToObject(root, "use_static_ip", wifi.use_static_ip);
-    cJSON_AddStringToObject(root, "static_ip", wifi.static_ip);
-    cJSON_AddStringToObject(root, "gateway", wifi.gateway);
-    cJSON_AddStringToObject(root, "subnet", wifi.subnet);
-    cJSON_AddStringToObject(root, "dns_primary", wifi.dns_primary);
-    cJSON_AddStringToObject(root, "dns_secondary", wifi.dns_secondary);
+    cJSON_AddBoolToObject(root, "use_static_ip", (strcmp(use_static_ip_str, "1") == 0));
+    cJSON_AddStringToObject(root, "static_ip", static_ip);
+    cJSON_AddStringToObject(root, "gateway", gateway);
+    cJSON_AddStringToObject(root, "subnet", subnet);
+    cJSON_AddStringToObject(root, "dns_primary", dns_primary);
+    cJSON_AddStringToObject(root, "dns_secondary", dns_secondary);
 
     esp_err_t ret = send_json_response(req, root, 200);
     cJSON_Delete(root);
@@ -646,6 +662,11 @@ static esp_err_t api_get_audio_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "ws_pin", i2s.ws_pin);
     cJSON_AddNumberToObject(root, "data_in_pin", i2s.data_in_pin);
 
+    // Calculate data rate
+    uint32_t data_rate_bps = i2s.sample_rate * i2s.channels * (i2s.bits_per_sample / 8);
+    cJSON_AddNumberToObject(root, "data_rate_bps", data_rate_bps);
+    cJSON_AddNumberToObject(root, "data_rate_kbps", data_rate_bps / 1024.0);
+
     esp_err_t ret = send_json_response(req, root, 200);
     cJSON_Delete(root);
     return ret;
@@ -675,50 +696,62 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req)
     i2s_config_data_t i2s;
     config_manager_get_i2s(&i2s);
 
-    cJSON *sample_rate = cJSON_GetObjectItem(root, "sample_rate");
-    if (sample_rate && cJSON_IsNumber(sample_rate))
-    {
-        i2s.sample_rate = sample_rate->valueint;
-    }
+    bool changed = false;
 
-    cJSON *bits_per_sample = cJSON_GetObjectItem(root, "bits_per_sample");
-    if (bits_per_sample && cJSON_IsNumber(bits_per_sample))
-    {
-        i2s.bits_per_sample = bits_per_sample->valueint;
-    }
-
-    cJSON *channels = cJSON_GetObjectItem(root, "channels");
-    if (channels && cJSON_IsNumber(channels))
-    {
-        i2s.channels = channels->valueint;
-    }
-
+    // GPIO pin changes require restart
     cJSON *bck_pin = cJSON_GetObjectItem(root, "bck_pin");
     if (bck_pin && cJSON_IsNumber(bck_pin))
     {
-        i2s.bck_pin = bck_pin->valueint;
+        uint8_t new_pin = bck_pin->valueint;
+        if (new_pin != i2s.bck_pin)
+        {
+            i2s.bck_pin = new_pin;
+            changed = true;
+        }
     }
 
     cJSON *ws_pin = cJSON_GetObjectItem(root, "ws_pin");
     if (ws_pin && cJSON_IsNumber(ws_pin))
     {
-        i2s.ws_pin = ws_pin->valueint;
+        uint8_t new_pin = ws_pin->valueint;
+        if (new_pin != i2s.ws_pin)
+        {
+            i2s.ws_pin = new_pin;
+            changed = true;
+        }
     }
 
     cJSON *data_in_pin = cJSON_GetObjectItem(root, "data_in_pin");
     if (data_in_pin && cJSON_IsNumber(data_in_pin))
     {
-        i2s.data_in_pin = data_in_pin->valueint;
+        uint8_t new_pin = data_in_pin->valueint;
+        if (new_pin != i2s.data_in_pin)
+        {
+            i2s.data_in_pin = new_pin;
+            changed = true;
+        }
     }
 
-    config_manager_set_i2s(&i2s);
-    config_manager_save();
+    if (changed)
+    {
+        config_manager_set_i2s(&i2s);
+        config_manager_save();
+    }
+
     cJSON_Delete(root);
 
     cJSON *response = cJSON_CreateObject();
     cJSON_AddStringToObject(response, "status", "success");
-    cJSON_AddStringToObject(response, "message", "Audio configuration saved. Restart required.");
-    cJSON_AddBoolToObject(response, "restart_required", true);
+    if (changed)
+    {
+        cJSON_AddStringToObject(response, "message", "Audio GPIO configuration saved. Restart required to apply changes.");
+        cJSON_AddBoolToObject(response, "restart_required", true);
+    }
+    else
+    {
+        cJSON_AddStringToObject(response, "message", "No changes detected.");
+        cJSON_AddBoolToObject(response, "restart_required", false);
+    }
 
     esp_err_t ret = send_json_response(req, response, 200);
     cJSON_Delete(response);
@@ -1293,6 +1326,663 @@ static esp_err_t api_post_load_config_handler(httpd_req_t *req)
     }
 }
 
+// GET /api/performance/metrics - Get detailed performance metrics
+static esp_err_t api_get_performance_metrics_handler(httpd_req_t *req)
+{
+    if (!check_basic_auth(req))
+    {
+        return send_auth_required(req);
+    }
+
+    cJSON *root = cJSON_CreateObject();
+
+    // Network performance metrics
+    cJSON *network = cJSON_CreateObject();
+
+// TCP metrics
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_TCP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+    uint64_t tcp_bytes_sent = 0;
+    uint32_t tcp_reconnects = 0;
+    tcp_streamer_get_stats(&tcp_bytes_sent, &tcp_reconnects);
+
+    cJSON *tcp_metrics = cJSON_CreateObject();
+    cJSON_AddNumberToObject(tcp_metrics, "bytes_sent", tcp_bytes_sent);
+    cJSON_AddNumberToObject(tcp_metrics, "reconnects", tcp_reconnects);
+    cJSON_AddBoolToObject(tcp_metrics, "connected", tcp_streamer_is_connected());
+    cJSON_AddItemToObject(network, "tcp", tcp_metrics);
+#endif
+
+// UDP metrics
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_UDP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+    uint64_t udp_bytes_sent = 0;
+    uint32_t udp_packets_sent = 0, udp_lost_packets = 0;
+    udp_streamer_get_stats(&udp_bytes_sent, &udp_packets_sent, &udp_lost_packets);
+
+    cJSON *udp_metrics = cJSON_CreateObject();
+    cJSON_AddNumberToObject(udp_metrics, "bytes_sent", udp_bytes_sent);
+    cJSON_AddNumberToObject(udp_metrics, "packets_sent", udp_packets_sent);
+    cJSON_AddNumberToObject(udp_metrics, "lost_packets", udp_lost_packets);
+    cJSON_AddBoolToObject(udp_metrics, "connected", udp_streamer_is_connected());
+    double packet_loss_rate = (udp_packets_sent > 0) ? (double)udp_lost_packets / udp_packets_sent * 100.0 : 0.0;
+    cJSON_AddNumberToObject(udp_metrics, "packet_loss_rate", packet_loss_rate);
+    cJSON_AddItemToObject(network, "udp", udp_metrics);
+#endif
+
+    cJSON_AddItemToObject(root, "network", network);
+
+    // Buffer performance metrics
+    cJSON *buffer = cJSON_CreateObject();
+    cJSON_AddNumberToObject(buffer, "usage_percent", buffer_manager_usage_percent());
+    cJSON_AddNumberToObject(buffer, "available_samples", buffer_manager_available());
+    cJSON_AddNumberToObject(buffer, "free_space_samples", buffer_manager_free_space());
+    cJSON_AddBoolToObject(buffer, "overflow_detected", buffer_manager_check_overflow());
+
+#if ADAPTIVE_BUFFERING_ENABLED
+    // Adaptive buffering metrics
+    size_t current_buffer_size = 0;
+    uint32_t resize_count = 0, last_resize_time = 0;
+    buffer_manager_adaptive_get_stats(&current_buffer_size, &resize_count, &last_resize_time);
+
+    cJSON *adaptive = cJSON_CreateObject();
+    cJSON_AddNumberToObject(adaptive, "current_size_bytes", current_buffer_size);
+    cJSON_AddNumberToObject(adaptive, "current_size_kb", current_buffer_size / 1024);
+    cJSON_AddNumberToObject(adaptive, "resize_count", resize_count);
+    cJSON_AddNumberToObject(adaptive, "last_resize_time_ms", last_resize_time);
+    cJSON_AddBoolToObject(adaptive, "enabled", buffer_manager_adaptive_is_enabled());
+    cJSON_AddItemToObject(buffer, "adaptive", adaptive);
+#endif
+
+    cJSON_AddItemToObject(root, "buffer", buffer);
+
+    // Memory performance metrics
+    cJSON *memory = cJSON_CreateObject();
+    cJSON_AddNumberToObject(memory, "free_heap", esp_get_free_heap_size());
+    cJSON_AddNumberToObject(memory, "min_free_heap", esp_get_minimum_free_heap_size());
+    cJSON_AddNumberToObject(memory, "largest_free_block", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+
+    // Memory fragmentation calculation
+    size_t free_heap = esp_get_free_heap_size();
+    size_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    double fragmentation = (largest_block > 0) ? (1.0 - (double)largest_block / free_heap) * 100.0 : 0.0;
+    cJSON_AddNumberToObject(memory, "fragmentation_percent", fragmentation);
+
+    cJSON_AddItemToObject(root, "memory", memory);
+
+    // System performance metrics
+    cJSON *system = cJSON_CreateObject();
+    cJSON_AddNumberToObject(system, "uptime_sec", esp_timer_get_time() / 1000000);
+
+    // WiFi performance
+    if (network_manager_is_connected())
+    {
+        wifi_ap_record_t ap_info;
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK)
+        {
+            cJSON *wifi_perf = cJSON_CreateObject();
+            cJSON_AddNumberToObject(wifi_perf, "rssi", ap_info.rssi);
+            cJSON_AddNumberToObject(wifi_perf, "channel", ap_info.primary);
+            // Remove link_speed as it's not available in this ESP-IDF version
+            // cJSON_AddNumberToObject(wifi_perf, "link_speed", ap_info.link_speed);
+            cJSON_AddItemToObject(system, "wifi", wifi_perf);
+        }
+    }
+
+#if configGENERATE_RUN_TIME_STATS
+    // CPU usage metrics
+    TaskStatus_t task_stats[20];
+    UBaseType_t task_count = uxTaskGetNumberOfTasks();
+    uint32_t total_runtime = 0;
+
+    if (task_count <= 20)
+    {
+        task_count = uxTaskGetSystemState(task_stats, task_count, &total_runtime);
+
+        cJSON *cpu_usage = cJSON_CreateArray();
+
+        for (UBaseType_t i = 0; i < task_count; i++)
+        {
+            cJSON *task = cJSON_CreateObject();
+            cJSON_AddStringToObject(task, "name", task_stats[i].pcTaskName);
+            cJSON_AddNumberToObject(task, "priority", task_stats[i].uxCurrentPriority);
+            cJSON_AddNumberToObject(task, "core_number", xTaskGetCoreID(task_stats[i].xHandle));
+
+            uint32_t cpu_percent = 0;
+            if (total_runtime > 0)
+            {
+                cpu_percent = (task_stats[i].ulRunTimeCounter * 100UL) / total_runtime;
+            }
+            cJSON_AddNumberToObject(task, "cpu_percent", cpu_percent);
+
+            cJSON_AddItemToArray(cpu_usage, task);
+        }
+
+        cJSON_AddItemToObject(system, "cpu_usage", cpu_usage);
+    }
+#endif
+
+    cJSON_AddItemToObject(root, "system", system);
+
+    // Audio performance metrics
+    cJSON *audio = cJSON_CreateObject();
+    i2s_config_data_t i2s_cfg;
+    config_manager_get_i2s(&i2s_cfg);
+
+    cJSON_AddNumberToObject(audio, "sample_rate", i2s_cfg.sample_rate);
+    cJSON_AddNumberToObject(audio, "bits_per_sample", i2s_cfg.bits_per_sample);
+    cJSON_AddNumberToObject(audio, "channels", i2s_cfg.channels);
+
+    // Calculate audio data rate
+    uint32_t audio_data_rate = i2s_cfg.sample_rate * i2s_cfg.channels * (i2s_cfg.bits_per_sample / 8);
+    cJSON_AddNumberToObject(audio, "data_rate_bps", audio_data_rate);
+    cJSON_AddNumberToObject(audio, "data_rate_kbps", audio_data_rate / 1024.0);
+
+    cJSON_AddItemToObject(root, "audio", audio);
+
+    // Timestamp
+    cJSON_AddNumberToObject(root, "timestamp_ms", esp_timer_get_time() / 1000);
+
+    esp_err_t ret = send_json_response(req, root, 200);
+    cJSON_Delete(root);
+    return ret;
+}
+
+// GET /api/monitoring/history - Get historical performance data
+static esp_err_t api_get_monitoring_history_handler(httpd_req_t *req)
+{
+    if (!check_basic_auth(req))
+    {
+        return send_auth_required(req);
+    }
+
+    // Parse query parameters
+    char query_str[256];
+    uint32_t start_time = 0, end_time = 0;
+    size_t max_entries = 100;
+
+    if (httpd_req_get_url_query_str(req, query_str, sizeof(query_str)) == ESP_OK)
+    {
+        // Parse start_time
+        char param[32];
+        if (httpd_query_key_value(query_str, "start", param, sizeof(param)) == ESP_OK)
+        {
+            start_time = strtoul(param, NULL, 10);
+        }
+
+        // Parse end_time
+        if (httpd_query_key_value(query_str, "end", param, sizeof(param)) == ESP_OK)
+        {
+            end_time = strtoul(param, NULL, 10);
+        }
+
+        // Parse limit
+        if (httpd_query_key_value(query_str, "limit", param, sizeof(param)) == ESP_OK)
+        {
+            max_entries = strtoul(param, NULL, 10);
+            if (max_entries > 500)
+                max_entries = 500; // Cap at 500 entries
+        }
+    }
+
+    performance_metrics_t *history = (performance_metrics_t *)malloc(max_entries * sizeof(performance_metrics_t));
+    if (!history)
+    {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    size_t count = performance_monitor_get_history(start_time, end_time, history, max_entries);
+
+    // Create JSON response
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "start_time_ms", start_time);
+    cJSON_AddNumberToObject(root, "end_time_ms", end_time);
+    cJSON_AddNumberToObject(root, "count", count);
+
+    cJSON *data_array = cJSON_CreateArray();
+    for (size_t i = 0; i < count; i++)
+    {
+        cJSON *entry = cJSON_CreateObject();
+        cJSON_AddNumberToObject(entry, "timestamp_ms", history[i].timestamp_ms);
+
+        // Network metrics
+        cJSON *network = cJSON_CreateObject();
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_TCP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+        cJSON *tcp = cJSON_CreateObject();
+        cJSON_AddNumberToObject(tcp, "bytes_sent", history[i].tcp_bytes_sent);
+        cJSON_AddNumberToObject(tcp, "reconnects", history[i].tcp_reconnects);
+        cJSON_AddBoolToObject(tcp, "connected", history[i].tcp_connected);
+        cJSON_AddItemToObject(network, "tcp", tcp);
+#endif
+
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_UDP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+        cJSON *udp = cJSON_CreateObject();
+        cJSON_AddNumberToObject(udp, "bytes_sent", history[i].udp_bytes_sent);
+        cJSON_AddNumberToObject(udp, "packets_sent", history[i].udp_packets_sent);
+        cJSON_AddNumberToObject(udp, "lost_packets", history[i].udp_lost_packets);
+        cJSON_AddNumberToObject(udp, "packet_loss_rate", history[i].udp_packet_loss_rate);
+        cJSON_AddBoolToObject(udp, "connected", history[i].udp_connected);
+        cJSON_AddItemToObject(network, "udp", udp);
+#endif
+        cJSON_AddItemToObject(entry, "network", network);
+
+        // Buffer metrics
+        cJSON *buffer = cJSON_CreateObject();
+        cJSON_AddNumberToObject(buffer, "usage_percent", history[i].buffer_usage_percent);
+        cJSON_AddNumberToObject(buffer, "available_samples", history[i].buffer_available_samples);
+        cJSON_AddNumberToObject(buffer, "free_space_samples", history[i].buffer_free_space_samples);
+        cJSON_AddBoolToObject(buffer, "overflow_detected", history[i].buffer_overflow_detected);
+        cJSON_AddItemToObject(entry, "buffer", buffer);
+
+        // Memory metrics
+        cJSON *memory = cJSON_CreateObject();
+        cJSON_AddNumberToObject(memory, "free_heap", history[i].free_heap);
+        cJSON_AddNumberToObject(memory, "min_free_heap", history[i].min_free_heap);
+        cJSON_AddNumberToObject(memory, "largest_free_block", history[i].largest_free_block);
+        cJSON_AddNumberToObject(memory, "fragmentation_percent", history[i].fragmentation_percent);
+        cJSON_AddItemToObject(entry, "memory", memory);
+
+        // System metrics
+        cJSON *system = cJSON_CreateObject();
+        cJSON_AddNumberToObject(system, "uptime_sec", history[i].uptime_sec);
+        cJSON_AddNumberToObject(system, "wifi_rssi", history[i].wifi_rssi);
+        cJSON_AddNumberToObject(system, "wifi_channel", history[i].wifi_channel);
+        cJSON_AddNumberToObject(system, "audio_data_rate_bps", history[i].audio_data_rate_bps);
+        cJSON_AddItemToObject(entry, "system", system);
+
+        cJSON_AddItemToArray(data_array, entry);
+    }
+    cJSON_AddItemToObject(root, "data", data_array);
+
+    free(history);
+
+    esp_err_t ret = send_json_response(req, root, 200);
+    cJSON_Delete(root);
+    return ret;
+}
+
+// GET /api/monitoring/alerts - Get performance alerts
+static esp_err_t api_get_monitoring_alerts_handler(httpd_req_t *req)
+{
+    if (!check_basic_auth(req))
+    {
+        return send_auth_required(req);
+    }
+
+    // Parse query parameters
+    char query_str[256];
+    alert_level_t min_level = ALERT_LEVEL_INFO;
+    size_t max_entries = 50;
+
+    if (httpd_req_get_url_query_str(req, query_str, sizeof(query_str)) == ESP_OK)
+    {
+        char param[32];
+
+        // Parse level
+        if (httpd_query_key_value(query_str, "level", param, sizeof(param)) == ESP_OK)
+        {
+            int level = atoi(param);
+            if (level >= ALERT_LEVEL_INFO && level <= ALERT_LEVEL_CRITICAL)
+            {
+                min_level = (alert_level_t)level;
+            }
+        }
+
+        // Parse limit
+        if (httpd_query_key_value(query_str, "limit", param, sizeof(param)) == ESP_OK)
+        {
+            max_entries = strtoul(param, NULL, 10);
+            if (max_entries > 100)
+                max_entries = 100; // Cap at 100 entries
+        }
+    }
+
+    performance_alert_t *alerts = (performance_alert_t *)malloc(max_entries * sizeof(performance_alert_t));
+    if (!alerts)
+    {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    size_t count = performance_monitor_get_alerts(alerts, max_entries, min_level);
+
+    // Create JSON response
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "count", count);
+    cJSON_AddNumberToObject(root, "min_level", min_level);
+
+    cJSON *alerts_array = cJSON_CreateArray();
+    for (size_t i = 0; i < count; i++)
+    {
+        cJSON *alert = cJSON_CreateObject();
+        cJSON_AddNumberToObject(alert, "timestamp_ms", alerts[i].timestamp_ms);
+        cJSON_AddNumberToObject(alert, "level", alerts[i].level);
+        cJSON_AddStringToObject(alert, "category", alerts[i].category);
+        cJSON_AddStringToObject(alert, "message", alerts[i].message);
+        cJSON_AddItemToArray(alerts_array, alert);
+    }
+    cJSON_AddItemToObject(root, "alerts", alerts_array);
+
+    free(alerts);
+
+    esp_err_t ret = send_json_response(req, root, 200);
+    cJSON_Delete(root);
+    return ret;
+}
+
+// DELETE /api/monitoring/alerts - Clear performance alerts
+static esp_err_t api_delete_monitoring_alerts_handler(httpd_req_t *req)
+{
+    if (!check_basic_auth(req))
+    {
+        return send_auth_required(req);
+    }
+
+    performance_monitor_clear_alerts();
+
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "success");
+    cJSON_AddStringToObject(response, "message", "Alerts cleared successfully");
+
+    esp_err_t ret = send_json_response(req, response, 200);
+    cJSON_Delete(response);
+    return ret;
+}
+
+// GET /api/monitoring/summary - Get performance summary
+static esp_err_t api_get_monitoring_summary_handler(httpd_req_t *req)
+{
+    if (!check_basic_auth(req))
+    {
+        return send_auth_required(req);
+    }
+
+    // Parse duration parameter (default 60 minutes)
+    char query_str[256];
+    uint32_t duration_min = 60;
+
+    if (httpd_req_get_url_query_str(req, query_str, sizeof(query_str)) == ESP_OK)
+    {
+        char param[32];
+        if (httpd_query_key_value(query_str, "duration", param, sizeof(param)) == ESP_OK)
+        {
+            duration_min = strtoul(param, NULL, 10);
+            if (duration_min > 1440)
+                duration_min = 1440; // Cap at 24 hours
+        }
+    }
+
+    uint32_t avg_buffer_usage = 0, max_buffer_usage = 0, total_drops = 0, uptime_percent = 0;
+    performance_monitor_get_summary(duration_min, &avg_buffer_usage, &max_buffer_usage, &total_drops, &uptime_percent);
+
+    // Get current metrics
+    performance_metrics_t current;
+    bool has_current = performance_monitor_get_latest(&current);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "duration_min", duration_min);
+    cJSON_AddNumberToObject(root, "avg_buffer_usage_percent", avg_buffer_usage);
+    cJSON_AddNumberToObject(root, "max_buffer_usage_percent", max_buffer_usage);
+    cJSON_AddNumberToObject(root, "total_drops", total_drops);
+    cJSON_AddNumberToObject(root, "uptime_percent", uptime_percent);
+
+    if (has_current)
+    {
+        cJSON *current_metrics = cJSON_CreateObject();
+        cJSON_AddNumberToObject(current_metrics, "timestamp_ms", current.timestamp_ms);
+        cJSON_AddNumberToObject(current_metrics, "buffer_usage_percent", current.buffer_usage_percent);
+        cJSON_AddNumberToObject(current_metrics, "free_heap", current.free_heap);
+        cJSON_AddNumberToObject(current_metrics, "fragmentation_percent", current.fragmentation_percent);
+        cJSON_AddNumberToObject(current_metrics, "uptime_sec", current.uptime_sec);
+        cJSON_AddItemToObject(root, "current", current_metrics);
+    }
+
+    esp_err_t ret = send_json_response(req, root, 200);
+    cJSON_Delete(root);
+    return ret;
+}
+
+// POST /api/monitoring/config - Configure monitoring settings
+static esp_err_t api_post_monitoring_config_handler(httpd_req_t *req)
+{
+    if (!check_basic_auth(req))
+    {
+        return send_auth_required(req);
+    }
+
+    char buf[512];
+    if (safe_httpd_req_recv(req, buf, sizeof(buf), NULL) != ESP_OK)
+    {
+        return ESP_FAIL;
+    }
+
+    cJSON *root = cJSON_Parse(buf);
+    if (!root)
+    {
+        httpd_resp_send_400(req);
+        return ESP_FAIL;
+    }
+
+    // Parse configuration
+    cJSON *enabled = cJSON_GetObjectItem(root, "enabled");
+    if (enabled && cJSON_IsBool(enabled))
+    {
+        performance_monitor_set_enabled(cJSON_IsTrue(enabled));
+    }
+
+    cJSON *interval = cJSON_GetObjectItem(root, "interval_ms");
+    if (interval && cJSON_IsNumber(interval))
+    {
+        uint32_t interval_val = interval->valueint;
+        if (interval_val >= 1000 && interval_val <= 300000) // 1 second to 5 minutes
+        {
+            performance_monitor_set_interval(interval_val);
+        }
+    }
+
+    cJSON_Delete(root);
+
+    // Get current configuration
+    bool current_enabled = performance_monitor_is_enabled();
+    uint32_t current_interval = performance_monitor_get_interval();
+
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "success");
+    cJSON_AddStringToObject(response, "message", "Monitoring configuration updated");
+    cJSON_AddBoolToObject(response, "enabled", current_enabled);
+    cJSON_AddNumberToObject(response, "interval_ms", current_interval);
+
+    esp_err_t ret = send_json_response(req, response, 200);
+    cJSON_Delete(response);
+    return ret;
+}
+
+// GET /api/system/backup - Export configuration to JSON
+static esp_err_t api_get_backup_handler(httpd_req_t *req)
+{
+    if (!check_basic_auth(req))
+    {
+        return send_auth_required(req);
+    }
+
+    char json_buffer[4096];
+    if (!config_manager_export_json(json_buffer, sizeof(json_buffer)))
+    {
+        cJSON *response = cJSON_CreateObject();
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Failed to export configuration");
+
+        esp_err_t ret = send_json_response(req, response, 500);
+        cJSON_Delete(response);
+        return ret;
+    }
+
+    // Set response headers for file download
+    web_server_add_cors_headers(req);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=\"audio-streamer-config.json\"");
+
+    // Get current timestamp for filename
+    uint64_t timestamp = esp_timer_get_time() / 1000;
+    char filename[64];
+    snprintf(filename, sizeof(filename), "attachment; filename=\"audio-streamer-config-%llu.json\"", timestamp);
+    httpd_resp_set_hdr(req, "Content-Disposition", filename);
+
+    httpd_resp_sendstr(req, json_buffer);
+
+    ESP_LOGI(TAG, "Configuration exported successfully (%zu bytes)", strlen(json_buffer));
+    return ESP_OK;
+}
+
+// POST /api/system/restore - Import configuration from JSON
+static esp_err_t api_post_restore_handler(httpd_req_t *req)
+{
+    if (!check_basic_auth(req))
+    {
+        return send_auth_required(req);
+    }
+
+    char buf[4096];
+    size_t received_len = 0;
+
+    if (safe_httpd_req_recv(req, buf, sizeof(buf), &received_len) != ESP_OK)
+    {
+        cJSON *response = cJSON_CreateObject();
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Failed to receive configuration data");
+
+        esp_err_t ret = send_json_response(req, response, 400);
+        cJSON_Delete(response);
+        return ret;
+    }
+
+    // Parse overwrite parameter from query string
+    char query_str[64];
+    bool overwrite = false;
+    if (httpd_req_get_url_query_str(req, query_str, sizeof(query_str)) == ESP_OK)
+    {
+        char param[16];
+        if (httpd_query_key_value(query_str, "overwrite", param, sizeof(param)) == ESP_OK)
+        {
+            overwrite = (strcmp(param, "true") == 0);
+        }
+    }
+
+    // Validate JSON before importing
+    cJSON *test_json = cJSON_Parse(buf);
+    if (!test_json)
+    {
+        cJSON *response = cJSON_CreateObject();
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Invalid JSON format");
+
+        esp_err_t ret = send_json_response(req, response, 400);
+        cJSON_Delete(response);
+        return ret;
+    }
+    cJSON_Delete(test_json);
+
+    // Import configuration
+    if (!config_manager_import_json(buf, overwrite))
+    {
+        cJSON *response = cJSON_CreateObject();
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Failed to import configuration");
+
+        esp_err_t ret = send_json_response(req, response, 500);
+        cJSON_Delete(response);
+        return ret;
+    }
+
+    // Validate imported configuration
+    if (!config_manager_validate())
+    {
+        cJSON *response = cJSON_CreateObject();
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Imported configuration validation failed");
+
+        esp_err_t ret = send_json_response(req, response, 400);
+        cJSON_Delete(response);
+        return ret;
+    }
+
+    // Save imported configuration to NVS
+    if (!config_manager_save())
+    {
+        cJSON *response = cJSON_CreateObject();
+        cJSON_AddStringToObject(response, "status", "error");
+        cJSON_AddStringToObject(response, "message", "Failed to save imported configuration");
+
+        esp_err_t ret = send_json_response(req, response, 500);
+        cJSON_Delete(response);
+        return ret;
+    }
+
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "success");
+    cJSON_AddStringToObject(response, "message", "Configuration imported successfully. Restart required to apply changes.");
+    cJSON_AddBoolToObject(response, "restart_required", true);
+    cJSON_AddNumberToObject(response, "bytes_received", received_len);
+    cJSON_AddBoolToObject(response, "overwrite", overwrite);
+
+    esp_err_t ret = send_json_response(req, response, 200);
+    cJSON_Delete(response);
+
+    ESP_LOGI(TAG, "Configuration imported successfully (%zu bytes, overwrite: %s)",
+             received_len, overwrite ? "true" : "false");
+    return ret;
+}
+
+// GET /api/system/validate - Validate current configuration
+static esp_err_t api_get_validate_handler(httpd_req_t *req)
+{
+    if (!check_basic_auth(req))
+    {
+        return send_auth_required(req);
+    }
+
+    cJSON *response = cJSON_CreateObject();
+
+    if (config_manager_validate())
+    {
+        cJSON_AddStringToObject(response, "status", "valid");
+        cJSON_AddStringToObject(response, "message", "Current configuration is valid");
+
+        // Add configuration version info
+        cJSON_AddNumberToObject(response, "version", config_manager_get_version());
+
+        // Add configuration summary
+        wifi_config_data_t wifi;
+        if (config_manager_get_wifi(&wifi))
+        {
+            cJSON *wifi_info = cJSON_CreateObject();
+            cJSON_AddStringToObject(wifi_info, "ssid", wifi.ssid);
+            cJSON_AddBoolToObject(wifi_info, "static_ip", wifi.use_static_ip);
+            cJSON_AddItemToObject(response, "wifi_summary", wifi_info);
+        }
+
+        tcp_config_data_t tcp;
+        if (config_manager_get_tcp(&tcp))
+        {
+            char server_str[32];
+            snprintf(server_str, sizeof(server_str), "%s:%d", tcp.server_ip, tcp.server_port);
+            cJSON_AddStringToObject(response, "tcp_server", server_str);
+        }
+
+        esp_err_t ret = send_json_response(req, response, 200);
+        cJSON_Delete(response);
+        return ret;
+    }
+    else
+    {
+        cJSON_AddStringToObject(response, "status", "invalid");
+        cJSON_AddStringToObject(response, "message", "Current configuration has validation errors");
+
+        esp_err_t ret = send_json_response(req, response, 400);
+        cJSON_Delete(response);
+        return ret;
+    }
+}
+
 // External symbols for embedded web files
 // HTML files
 extern const uint8_t index_html_start[] asm("_binary_index_html_start");
@@ -1567,7 +2257,20 @@ bool web_server_init(void)
         {"/api/system/restart", HTTP_POST, api_post_restart_handler},
         {"/api/system/factory-reset", HTTP_POST, api_post_factory_reset_handler},
         {"/api/system/save", HTTP_POST, api_post_save_config_handler},
-        {"/api/system/load", HTTP_POST, api_post_load_config_handler}};
+        {"/api/system/load", HTTP_POST, api_post_load_config_handler},
+        {"/api/system/backup", HTTP_GET, api_get_backup_handler},
+        {"/api/system/restore", HTTP_POST, api_post_restore_handler},
+        {"/api/system/validate", HTTP_GET, api_get_validate_handler},
+
+        // Performance monitoring endpoints
+        {"/api/performance/metrics", HTTP_GET, api_get_performance_metrics_handler},
+
+        // Remote monitoring endpoints
+        {"/api/monitoring/history", HTTP_GET, api_get_monitoring_history_handler},
+        {"/api/monitoring/alerts", HTTP_GET, api_get_monitoring_alerts_handler},
+        {"/api/monitoring/alerts", HTTP_DELETE, api_delete_monitoring_alerts_handler},
+        {"/api/monitoring/summary", HTTP_GET, api_get_monitoring_summary_handler},
+        {"/api/monitoring/config", HTTP_POST, api_post_monitoring_config_handler}};
 
     // Register all endpoints with the refactored helper
     register_endpoints(server, endpoints, sizeof(endpoints) / sizeof(endpoints[0]));

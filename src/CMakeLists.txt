@@ -3,11 +3,15 @@ idf_component_register(
          "modules/i2s_handler.cpp"
          "modules/network_manager.cpp"
          "modules/tcp_streamer.cpp"
+         "modules/udp_streamer.cpp"
          "modules/buffer_manager.cpp"
+         "modules/config_schema.cpp"
          "modules/config_manager.cpp"
-         "modules/web_server.cpp"
+         "modules/config_manager_v2.cpp"
+         "modules/web_server_v2.cpp"
          "modules/ota_handler.cpp"
          "modules/captive_portal.cpp"
+         "modules/performance_monitor.cpp"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         driver

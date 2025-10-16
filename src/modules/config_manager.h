@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 // Configuration version for migration
 #define CONFIG_VERSION 1
@@ -36,6 +37,9 @@ typedef struct {
     uint8_t bck_pin;
     uint8_t ws_pin;
     uint8_t data_in_pin;
+    uint8_t audio_format; // audio_format_t
+    bool auto_gain_control;
+    int8_t input_gain_db; // -40 to +40 dB
 } i2s_config_data_t;
 
 typedef struct {
@@ -77,6 +81,43 @@ typedef struct {
     char username[32];
     char password[64];
 } auth_config_data_t;
+
+typedef struct {
+    uint8_t protocol; // 0=TCP, 1=UDP, 2=BOTH
+} streaming_config_data_t;
+
+typedef struct {
+    uint32_t min_size;
+    uint32_t max_size;
+    uint32_t default_size;
+    uint8_t threshold_low;
+    uint8_t threshold_high;
+    uint32_t check_interval_ms;
+    uint32_t resize_delay_ms;
+} adaptive_buffer_config_data_t;
+
+typedef struct {
+    uint32_t packet_max_size;
+    uint32_t send_timeout_ms;
+    uint8_t buffer_count;
+    char multicast_group[16];
+    uint16_t multicast_port;
+} udp_config_data_t;
+
+typedef struct {
+    bool enabled;
+    uint32_t keepalive_idle_sec;
+    uint32_t keepalive_interval_sec;
+    uint32_t keepalive_count;
+    bool nodelay_enabled;
+    uint32_t tx_buffer_size;
+    uint32_t rx_buffer_size;
+} tcp_optimization_config_data_t;
+
+typedef struct {
+    uint32_t interval_ms;
+    size_t max_entries;
+} performance_monitor_config_data_t;
 
 /**
  * Initialize configuration manager and NVS
@@ -194,9 +235,149 @@ bool config_manager_get_auth(auth_config_data_t* config);
 bool config_manager_set_auth(const auth_config_data_t* config);
 
 /**
+ * Get streaming configuration
+ */
+bool config_manager_get_streaming(streaming_config_data_t* config);
+
+/**
+ * Set streaming configuration
+ */
+bool config_manager_set_streaming(const streaming_config_data_t* config);
+
+/**
+ * Get adaptive buffer configuration
+ */
+bool config_manager_get_adaptive_buffer(adaptive_buffer_config_data_t* config);
+
+/**
+ * Set adaptive buffer configuration
+ */
+bool config_manager_set_adaptive_buffer(const adaptive_buffer_config_data_t* config);
+
+/**
+ * Get UDP configuration
+ */
+bool config_manager_get_udp(udp_config_data_t* config);
+
+/**
+ * Set UDP configuration
+ */
+bool config_manager_set_udp(const udp_config_data_t* config);
+
+/**
+ * Get TCP optimization configuration
+ */
+bool config_manager_get_tcp_optimization(tcp_optimization_config_data_t* config);
+
+/**
+ * Set TCP optimization configuration
+ */
+bool config_manager_set_tcp_optimization(const tcp_optimization_config_data_t* config);
+
+/**
+ * Get performance monitor configuration
+ */
+bool config_manager_get_performance_monitor(performance_monitor_config_data_t* config);
+
+/**
+ * Set performance monitor configuration
+ */
+bool config_manager_set_performance_monitor(const performance_monitor_config_data_t* config);
+
+/**
  * Check if this is first boot (no config in NVS)
  */
 bool config_manager_is_first_boot(void);
+
+/**
+ * Export all configuration to JSON string
+ * @param json_output Buffer to store JSON output (must be at least 4096 bytes)
+ * @param buffer_size Size of json_output buffer
+ * @return true on success, false if buffer too small
+ */
+bool config_manager_export_json(char* json_output, size_t buffer_size);
+
+/**
+ * Import configuration from JSON string
+ * @param json_input JSON string with configuration data
+ * @param overwrite Whether to overwrite existing configuration (true) or merge (false)
+ * @return true on success, false on JSON parse error
+ */
+bool config_manager_import_json(const char* json_input, bool overwrite);
+
+/**
+ * Validate configuration data integrity
+ * @return true if configuration is valid
+ */
+bool config_manager_validate(void);
+
+/**
+ * Get configuration version
+ * @return Current configuration version
+ */
+uint8_t config_manager_get_version(void);
+
+/**
+ * Check if configuration needs migration
+ * @param from_version Version to migrate from
+ * @return true if migration is needed
+ */
+bool config_manager_needs_migration(uint8_t from_version);
+
+/**
+ * Migrate configuration from older version
+ * @param from_version Source version
+ * @return true on success
+ */
+bool config_manager_migrate(uint8_t from_version);
+
+/**
+ * Validate audio format configuration
+ * @param sample_rate Sample rate in Hz
+ * @param bits_per_sample Bits per sample (8, 16, 24, 32)
+ * @param channels Number of channels (1 or 2)
+ * @return true if valid
+ */
+bool config_manager_validate_audio_format(uint32_t sample_rate, uint8_t bits_per_sample, uint8_t channels);
+
+/**
+ * Get audio format name from enum
+ * @param format Audio format enum
+ * @param buffer Buffer to store name (must be at least 16 bytes)
+ * @return true on success
+ */
+bool config_manager_get_audio_format_name(uint8_t format, char *buffer, size_t buffer_size);
+
+/**
+ * Get sample rate name from value
+ * @param sample_rate Sample rate in Hz
+ * @param buffer Buffer to store name (must be at least 16 bytes)
+ * @return true on success
+ */
+bool config_manager_get_sample_rate_name(uint32_t sample_rate, char *buffer, size_t buffer_size);
+
+/**
+ * Calculate audio data rate
+ * @param sample_rate Sample rate in Hz
+ * @param bits_per_sample Bits per sample
+ * @param channels Number of channels
+ * @return Data rate in bits per second
+ */
+uint32_t config_manager_calculate_audio_data_rate(uint32_t sample_rate, uint8_t bits_per_sample, uint8_t channels);
+
+/**
+ * Convert audio format to bits per sample
+ * @param format Audio format enum
+ * @return Bits per sample
+ */
+uint8_t config_manager_format_to_bits_per_sample(uint8_t format);
+
+/**
+ * Convert bits per sample to audio format
+ * @param bits_per_sample Bits per sample
+ * @return Audio format enum (AUDIO_FORMAT_PCM_16BIT if invalid)
+ */
+uint8_t config_manager_bits_per_sample_to_format(uint8_t bits_per_sample);
 
 /**
  * Deinitialize config manager

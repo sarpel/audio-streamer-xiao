@@ -4,6 +4,23 @@
 # HTTP server handler slots must be set in code (no Kconfig key in ESP-IDF 5.5);
 # see web_server.cpp where config.max_uri_handlers is set.
 
+# ============================================================================
+# USB CONSOLE CONFIGURATION (CRITICAL for XIAO ESP32-S3)
+# ============================================================================
+# Use USB Serial/JTAG for reliable console output (works even if firmware crashes)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# Disable native USB CDC (unreliable if firmware crashes early)
+# CONFIG_ESP_CONSOLE_USB_CDC is not set
+# Disable UART console (we're using USB)
+# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set
+# No secondary console needed
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+# Enable USB Serial/JTAG device
+CONFIG_USJ_ENABLE_USB_SERIAL_JTAG=y
+
+# ============================================================================
+# WATCHDOG CONFIGURATION
+# ============================================================================
 # Relax Task Watchdog timeout to avoid false positives during startup
 # (You also add/reset WDT in code; this gives more headroom.)
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=15

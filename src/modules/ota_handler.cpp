@@ -1,5 +1,5 @@
 #include "ota_handler.h"
-#include "web_server.h"
+#include "web_server_v2.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_http_server.h"
@@ -38,13 +38,13 @@ int ota_handler_get_progress(void)
 static esp_err_t ota_upload_handler(httpd_req_t *req)
 {
     // Check authentication first
-    if (!web_server_check_auth(req))
+    if (!web_server_v2_check_auth(req))
     {
-        return web_server_send_auth_required(req);
+        return web_server_v2_send_auth_required(req);
     }
 
     // Add CORS headers for successful auth
-    web_server_add_cors_headers(req);
+    web_server_v2_add_cors_headers(req);
 
     esp_err_t ret = ESP_OK;
     char buf[1024];
@@ -147,9 +147,9 @@ static esp_err_t ota_upload_handler(httpd_req_t *req)
 static esp_err_t ota_status_handler(httpd_req_t *req)
 {
     // Check authentication
-    if (!web_server_check_auth(req))
+    if (!web_server_v2_check_auth(req))
     {
-        return web_server_send_auth_required(req);
+        return web_server_v2_send_auth_required(req);
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -196,7 +196,7 @@ static esp_err_t ota_status_handler(httpd_req_t *req)
         }
     }
 
-    esp_err_t ret = web_server_send_json_response(req, root, 200);
+    esp_err_t ret = web_server_v2_send_json_response(req, root, 200);
     cJSON_Delete(root);
     return ret;
 }
@@ -205,13 +205,13 @@ static esp_err_t ota_status_handler(httpd_req_t *req)
 static esp_err_t ota_rollback_handler(httpd_req_t *req)
 {
     // Check authentication first
-    if (!web_server_check_auth(req))
+    if (!web_server_v2_check_auth(req))
     {
-        return web_server_send_auth_required(req);
+        return web_server_v2_send_auth_required(req);
     }
 
     // Add CORS headers for successful auth
-    web_server_add_cors_headers(req);
+    web_server_v2_add_cors_headers(req);
 
     const esp_partition_t *last_invalid = esp_ota_get_last_invalid_partition();
 

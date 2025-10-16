@@ -27,4 +27,20 @@ void captive_portal_stop(void);
  */
 bool captive_portal_is_configured(void);
 
+/**
+ * Check if new configuration was submitted during this portal session
+ * @return true if config was updated since portal started
+ */
+bool captive_portal_config_updated(void);
+
+/**
+ * Clear the config updated flag (called when portal starts)
+ */
+void captive_portal_clear_update_flag(void);
+
+/**
+ * Set the config updated flag (called when config is saved via web API)
+ */
+void captive_portal_mark_config_updated(void);
+
 #endif // CAPTIVE_PORTAL_H
