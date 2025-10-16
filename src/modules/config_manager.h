@@ -39,7 +39,7 @@ typedef struct {
     uint8_t data_in_pin;
     uint8_t audio_format; // audio_format_t
     bool auto_gain_control;
-    uint8_t input_gain_db; // -40 to +40 dB
+    int8_t input_gain_db; // -40 to +40 dB
 } i2s_config_data_t;
 
 typedef struct {

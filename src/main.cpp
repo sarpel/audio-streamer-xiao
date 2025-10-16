@@ -3,6 +3,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "esp_task_wdt.h"
 #include "nvs_flash.h"
 
@@ -48,10 +49,14 @@ static void i2s_reader_task(void *arg)
     const size_t read_samples = I2S_READ_SAMPLES;
     // ✅ CHANGED: Use int16_t buffer for direct 16-bit I2S reading (50% bandwidth savings)
     int16_t *i2s_buffer = (int16_t *)malloc(read_samples * sizeof(int16_t));
+    // ✅ ADD: Temporary buffer for 32-bit samples (required for thread-safe i2s_read_16)
+    int32_t *tmp_buffer = (int32_t *)malloc(read_samples * sizeof(int32_t));
 
-    if (i2s_buffer == NULL)
+    if (i2s_buffer == NULL || tmp_buffer == NULL)
     {
-        ESP_LOGE(TAG, "CRITICAL: Failed to allocate I2S buffer");
+        ESP_LOGE(TAG, "CRITICAL: Failed to allocate I2S buffers");
+        free(i2s_buffer);
+        free(tmp_buffer);
         esp_restart(); // Critical failure, reboot
         return;
     }
@@ -59,7 +64,7 @@ static void i2s_reader_task(void *arg)
     while (1)
     {
         // ✅ CHANGED: Use i2s_read_16() to read directly as 16-bit samples
-        size_t samples_read = i2s_read_16(i2s_buffer, read_samples);
+        size_t samples_read = i2s_read_16(i2s_buffer, tmp_buffer, read_samples);
 
         if (samples_read > 0)
         {
@@ -136,6 +141,7 @@ static void i2s_reader_task(void *arg)
     }
 
     free(i2s_buffer);
+    free(tmp_buffer);
     vTaskDelete(NULL);
 }
 
@@ -773,7 +779,17 @@ extern "C" void app_main(void)
     if (config_manager_v2_is_first_boot())
     {
         ESP_LOGI(TAG, "First boot detected - using default configuration");
-        config_manager_v2_save(); // Save defaults to NVS
+        if (!config_manager_v2_save())
+        {
+            ESP_LOGE(TAG, "CRITICAL: Failed to save default configuration, rebooting...");
+            // ✅ Feed watchdog during delay to prevent timeout
+            for (int i = 0; i < 100; i++) // 100 × 50ms = 5 seconds
+            {
+                esp_task_wdt_reset();
+                vTaskDelay(pdMS_TO_TICKS(50));
+            }
+            esp_restart();
+        }
     }
 
     // ✅ NEW 3-STRIKE APPROACH: Start WiFi and monitor for 3 consecutive failures

@@ -40,10 +40,11 @@ bool i2s_handler_read(int32_t *buffer, size_t samples_to_read, size_t *bytes_rea
  * This is the recommended function for INMP441 audio streaming.
  *
  * @param out Output buffer for int16_t samples
+ * @param tmp_buffer Temporary buffer for 32-bit samples (must be at least I2S_READ_SAMPLES in size)
  * @param samples Number of samples to read
  * @return Number of samples actually read
  */
-size_t i2s_read_16(int16_t *out, size_t samples);
+size_t i2s_read_16(int16_t *out, int32_t *tmp_buffer, size_t samples);
 
 /**
  * Deinitialize I2S driver

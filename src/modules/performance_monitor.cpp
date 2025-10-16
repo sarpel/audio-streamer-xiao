@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -198,7 +199,8 @@ performance_metrics_t performance_monitor_collect_metrics(void)
     }
 
     // Audio metrics (fixed 16kHz 16-bit mono)
-    metrics.audio_data_rate_bps = SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE / 8);
+    // Note: audio_data_rate_bps field name implies bits per second, so we multiply by 8 for bits
+    metrics.audio_data_rate_bps = SAMPLE_RATE * CHANNELS * BITS_PER_SAMPLE;
 
     return metrics;
 }

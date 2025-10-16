@@ -208,8 +208,6 @@ typedef enum
 #define ARP_TABLE_SIZE 10  // ARP table size
 
 // Performance Monitoring Configuration
-#define HISTORY_INTERVAL_MS 10000 // 10 seconds between samples
-#define MAX_HISTORY_ENTRIES 720   // 2 hours at 10-second intervals
 #define MAX_ALERTS 100            // Maximum alerts to store
 
 #endif // CONFIG_H

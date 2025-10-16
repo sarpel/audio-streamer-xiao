@@ -108,7 +108,10 @@ static bool tcp_connect(void)
 bool tcp_streamer_init(void)
 {
     // ✅ MOVE: Allocate packing buffer FIRST (before connection attempts)
-    packing_buffer_size = 16384 * 2; // Max samples × bytes per sample
+    // Calculate buffer size based on configuration constants instead of magic number
+    packing_buffer_size = TCP_SEND_SAMPLES * BYTES_PER_SAMPLE; // Max samples × bytes per sample
+    // Add safety margin for any potential overhead
+    packing_buffer_size += 1024;
     packing_buffer = (uint8_t *)malloc(packing_buffer_size);
 
     if (packing_buffer == NULL)

@@ -86,7 +86,10 @@ static bool udp_connect(void)
 bool udp_streamer_init(void)
 {
     // Allocate UDP buffer (header + audio data)
-    size_t max_audio_payload = 16384 * 2; // Max samples × bytes per sample
+    // Calculate max audio payload based on configuration constants instead of magic number
+    size_t max_audio_payload = TCP_SEND_SAMPLES * BYTES_PER_SAMPLE; // Max samples × bytes per sample
+    // Add safety margin for packet headers and potential overhead
+    max_audio_payload += 1024;
     udp_buffer_size = sizeof(udp_packet_header_t) + max_audio_payload;
     udp_buffer = (uint8_t *)malloc(udp_buffer_size);
 

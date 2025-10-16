@@ -78,12 +78,19 @@ bool web_server_v2_check_auth(httpd_req_t *req)
     char username[32];
     char password[64];
 
-    if (!config_manager_v2_get_field(CONFIG_FIELD_AUTH_USERNAME, username, sizeof(username)) ||
-        !config_manager_v2_get_field(CONFIG_FIELD_AUTH_PASSWORD, password, sizeof(password)))
+    // Use config_manager_v2_get_config to get raw password (not masked)
+    unified_config_t config;
+    if (!config_manager_v2_get_config(&config))
     {
         ESP_LOGW(TAG, "Failed to get auth config");
         return false;
     }
+
+    // Copy auth credentials from unified config
+    strncpy(username, config.auth_username, sizeof(username));
+    username[sizeof(username) - 1] = '\0';
+    strncpy(password, config.auth_password, sizeof(password));
+    password[sizeof(password) - 1] = '\0';
 
     // Get Authorization header
     char auth_header[256];
@@ -455,12 +462,174 @@ static esp_err_t api_post_network_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    cJSON *response = cJSON_CreateObject();
-    cJSON_AddStringToObject(response, "status", "success");
-    cJSON_AddStringToObject(response, "message", "Network configuration updated. Restart required to apply changes.");
-    cJSON_AddBoolToObject(response, "restart_required", true);
+    bool changed = false;
+    config_validation_result_t result;
+
+    // Extract WiFi configuration from JSON
+    cJSON *wifi = cJSON_GetObjectItem(root, "wifi");
+    if (wifi && cJSON_IsObject(wifi))
+    {
+        cJSON *ssid = cJSON_GetObjectItem(wifi, "ssid");
+        cJSON *password = cJSON_GetObjectItem(wifi, "password");
+        cJSON *use_static_ip = cJSON_GetObjectItem(wifi, "use_static_ip");
+        cJSON *static_ip = cJSON_GetObjectItem(wifi, "static_ip");
+        cJSON *gateway = cJSON_GetObjectItem(wifi, "gateway");
+        cJSON *subnet = cJSON_GetObjectItem(wifi, "subnet");
+        cJSON *dns_primary = cJSON_GetObjectItem(wifi, "dns_primary");
+        cJSON *dns_secondary = cJSON_GetObjectItem(wifi, "dns_secondary");
+
+        // Update WiFi SSID
+        if (ssid && cJSON_IsString(ssid))
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_WIFI_SSID, ssid->valuestring, &result);
+            changed = true;
+        }
+
+        // Update WiFi password (only if not masked)
+        if (password && cJSON_IsString(password) && strcmp(password->valuestring, "********") != 0)
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_WIFI_PASSWORD, password->valuestring, &result);
+            changed = true;
+        }
+
+        // Update static IP settings
+        if (use_static_ip && cJSON_IsBool(use_static_ip))
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_WIFI_USE_STATIC_IP, use_static_ip->valueint ? "1" : "0", &result);
+            changed = true;
+        }
+
+        if (static_ip && cJSON_IsString(static_ip))
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_WIFI_STATIC_IP, static_ip->valuestring, &result);
+            changed = true;
+        }
+
+        if (gateway && cJSON_IsString(gateway))
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_WIFI_GATEWAY, gateway->valuestring, &result);
+            changed = true;
+        }
+
+        if (subnet && cJSON_IsString(subnet))
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_WIFI_SUBNET, subnet->valuestring, &result);
+            changed = true;
+        }
+
+        if (dns_primary && cJSON_IsString(dns_primary))
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_WIFI_DNS_PRIMARY, dns_primary->valuestring, &result);
+            changed = true;
+        }
+
+        if (dns_secondary && cJSON_IsString(dns_secondary))
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_WIFI_DNS_SECONDARY, dns_secondary->valuestring, &result);
+            changed = true;
+        }
+    }
+
+    // Extract TCP/UDP configuration from JSON
+    cJSON *server = cJSON_GetObjectItem(root, "server");
+    if (server && cJSON_IsObject(server))
+    {
+        cJSON *tcp_ip = cJSON_GetObjectItem(server, "tcp_ip");
+        cJSON *tcp_port = cJSON_GetObjectItem(server, "tcp_port");
+        cJSON *udp_ip = cJSON_GetObjectItem(server, "udp_ip");
+        cJSON *udp_port = cJSON_GetObjectItem(server, "udp_port");
+        cJSON *protocol = cJSON_GetObjectItem(server, "protocol");
+
+        // Update TCP server settings
+        if (tcp_ip && cJSON_IsString(tcp_ip))
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_TCP_SERVER_IP, tcp_ip->valuestring, &result);
+            changed = true;
+        }
+
+        if (tcp_port && cJSON_IsNumber(tcp_port))
+        {
+            char port_str[8];
+            snprintf(port_str, sizeof(port_str), "%d", tcp_port->valueint);
+            config_manager_v2_set_field(CONFIG_FIELD_TCP_SERVER_PORT, port_str, &result);
+            changed = true;
+        }
+
+        // Update UDP server settings
+        if (udp_ip && cJSON_IsString(udp_ip))
+        {
+            config_manager_v2_set_field(CONFIG_FIELD_UDP_SERVER_IP, udp_ip->valuestring, &result);
+            changed = true;
+        }
+
+        if (udp_port && cJSON_IsNumber(udp_port))
+        {
+            char port_str[8];
+            snprintf(port_str, sizeof(port_str), "%d", udp_port->valueint);
+            config_manager_v2_set_field(CONFIG_FIELD_UDP_SERVER_PORT, port_str, &result);
+            changed = true;
+        }
+
+        // Update streaming protocol
+        if (protocol && cJSON_IsString(protocol))
+        {
+            int protocol_val = -1;
+            if (strcmp(protocol->valuestring, "TCP") == 0)
+            {
+                protocol_val = 0;
+            }
+            else if (strcmp(protocol->valuestring, "UDP") == 0)
+            {
+                protocol_val = 1;
+            }
+            else if (strcmp(protocol->valuestring, "BOTH") == 0)
+            {
+                protocol_val = 2;
+            }
+
+            if (protocol_val >= 0)
+            {
+                char protocol_str[8];
+                snprintf(protocol_str, sizeof(protocol_str), "%d", protocol_val);
+                config_manager_v2_set_field(CONFIG_FIELD_STREAMING_PROTOCOL, protocol_str, &result);
+                changed = true;
+            }
+        }
+    }
 
     cJSON_Delete(root);
+
+    // Save configuration if changed
+    if (changed)
+    {
+        if (!config_manager_v2_save())
+        {
+            cJSON *response = cJSON_CreateObject();
+            cJSON_AddStringToObject(response, "status", "error");
+            cJSON_AddStringToObject(response, "message", "Failed to save configuration");
+            esp_err_t ret = web_server_v2_send_json_response(req, response, 500);
+            cJSON_Delete(response);
+            return ret;
+        }
+
+        // Mark captive portal as updated
+        captive_portal_mark_config_updated();
+
+        ESP_LOGI(TAG, "Network configuration saved successfully");
+    }
+
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "success");
+    if (changed)
+    {
+        cJSON_AddStringToObject(response, "message", "Network configuration saved. Restart required to apply changes.");
+        cJSON_AddBoolToObject(response, "restart_required", true);
+    }
+    else
+    {
+        cJSON_AddStringToObject(response, "message", "No changes detected.");
+        cJSON_AddBoolToObject(response, "restart_required", false);
+    }
 
     esp_err_t ret = web_server_v2_send_json_response(req, response, 200);
     cJSON_Delete(response);
@@ -500,8 +669,8 @@ static esp_err_t api_get_audio_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(audio, "channels", CHANNELS);
     cJSON_AddStringToObject(audio, "format", "PCM 16-bit mono");
 
-    // Calculate data rate
-    uint32_t data_rate_bps = SAMPLE_RATE * CHANNELS * (BITS_PER_SAMPLE / 8);
+    // Calculate data rate (bps = bits per second)
+    uint32_t data_rate_bps = SAMPLE_RATE * CHANNELS * BITS_PER_SAMPLE;
     cJSON_AddNumberToObject(audio, "data_rate_bps", data_rate_bps);
     cJSON_AddNumberToObject(audio, "data_rate_kbps", data_rate_bps / 1024.0);
 
@@ -573,7 +742,16 @@ static esp_err_t api_post_audio_handler(httpd_req_t *req)
     // Save configuration if changed
     if (changed)
     {
-        config_manager_v2_save();
+        if (!config_manager_v2_save())
+        {
+            cJSON *response = cJSON_CreateObject();
+            cJSON_AddStringToObject(response, "status", "error");
+            cJSON_AddStringToObject(response, "message", "Failed to save audio configuration");
+            esp_err_t ret = web_server_v2_send_json_response(req, response, 500);
+            cJSON_Delete(response);
+            cJSON_Delete(root);
+            return ret;
+        }
         // ✅ Mark that config was updated during captive portal session
         captive_portal_mark_config_updated();
     }
@@ -835,7 +1013,10 @@ static esp_err_t api_post_restart_handler(httpd_req_t *req)
     // Save any unsaved changes before restart
     if (config_manager_v2_has_unsaved_changes())
     {
-        config_manager_v2_save();
+        if (!config_manager_v2_save())
+        {
+            ESP_LOGW(TAG, "Failed to save unsaved changes before restart");
+        }
     }
 
     cJSON *response = cJSON_CreateObject();

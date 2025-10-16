@@ -25,6 +25,9 @@ bool i2s_handler_init(void)
     }
 
     // Clock configuration: 16 kHz (fixed), no MCLK
+    // Note: bits_per_sample is the post-conversion output format (16-bit)
+    // while I2S hardware captures 24-bit data in 32-bit slots (Philips standard)
+    // Conversion from 24-bit to 16-bit happens in i2s_read_16() function
     i2s_std_clk_config_t clk_cfg = {
         .sample_rate_hz = SAMPLE_RATE,
         .clk_src = I2S_CLK_SRC_DEFAULT,
@@ -136,11 +139,17 @@ bool i2s_handler_read(int32_t *buffer, size_t samples_to_read, size_t *bytes_rea
 }
 
 // New function: Read 24-bit samples and convert to 16-bit
-size_t i2s_read_16(int16_t *out, size_t samples)
+size_t i2s_read_16(int16_t *out, int32_t *tmp_buffer, size_t samples)
 {
     if (out == NULL)
     {
         ESP_LOGE(TAG, "Invalid output buffer");
+        return 0;
+    }
+
+    if (tmp_buffer == NULL)
+    {
+        ESP_LOGE(TAG, "Invalid temporary buffer");
         return 0;
     }
 
@@ -150,7 +159,6 @@ size_t i2s_read_16(int16_t *out, size_t samples)
         return 0;
     }
 
-    static int32_t tmp[I2S_READ_SAMPLES];
     size_t total_samples_read = 0;
     size_t samples_remaining = samples;
     int16_t *out_ptr = out;
@@ -160,7 +168,7 @@ size_t i2s_read_16(int16_t *out, size_t samples)
         size_t chunk_samples = samples_remaining > I2S_READ_SAMPLES ? I2S_READ_SAMPLES : samples_remaining;
         size_t bytes_to_read = chunk_samples * sizeof(int32_t);
         size_t bytes_read = 0;
-        esp_err_t ret = i2s_channel_read(rx_chan, tmp, bytes_to_read, &bytes_read, portMAX_DELAY);
+        esp_err_t ret = i2s_channel_read(rx_chan, tmp_buffer, bytes_to_read, &bytes_read, portMAX_DELAY);
         if (ret != ESP_OK)
         {
             ESP_LOGE(TAG, "I2S read failed: %s", esp_err_to_name(ret));
@@ -169,7 +177,7 @@ size_t i2s_read_16(int16_t *out, size_t samples)
         size_t n = bytes_read / sizeof(int32_t);
         for (size_t i = 0; i < n; ++i)
         {
-            out_ptr[i] = (int16_t)(tmp[i] >> 16);
+            out_ptr[i] = (int16_t)(tmp_buffer[i] >> 16);
         }
         out_ptr += n;
         total_samples_read += n;

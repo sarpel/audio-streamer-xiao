@@ -111,13 +111,94 @@ bool config_manager_v2_load(void) {
         // Try legacy migration as fallback
         ESP_LOGI(TAG, "Attempting legacy configuration migration as fallback");
         unified_config_t legacy_config;
-        if (config_schema_convert_legacy(NULL, &legacy_config)) {
-            memcpy(&current_config, &legacy_config, sizeof(unified_config_t));
-            memcpy(&saved_config, &current_config, sizeof(unified_config_t));
-            has_unsaved_changes = true;
 
-            ESP_LOGI(TAG, "Legacy configuration migrated successfully");
-            return true;
+        // Load legacy configuration from NVS
+        nvs_handle_t legacy_nvs_handle;
+        esp_err_t legacy_err = nvs_open("audio_stream", NVS_READONLY, &legacy_nvs_handle);
+        if (legacy_err == ESP_OK) {
+            ESP_LOGI(TAG, "Found legacy configuration namespace, attempting migration");
+
+            // Try to read legacy configuration data
+            wifi_config_data_t legacy_wifi = {0};
+            tcp_config_data_t legacy_tcp = {0};
+            i2s_config_data_t legacy_i2s = {0};
+            buffer_config_data_t legacy_buffer = {0};
+            task_config_data_t legacy_tasks = {0};
+            error_config_data_t legacy_error = {0};
+            debug_config_data_t legacy_debug = {0};
+            auth_config_data_t legacy_auth = {0};
+            streaming_config_data_t legacy_streaming = {0};
+
+            size_t required_size;
+            bool has_legacy_data = false;
+
+            // Read WiFi config
+            required_size = sizeof(legacy_wifi);
+            legacy_err = nvs_get_blob(legacy_nvs_handle, "wifi", &legacy_wifi, &required_size);
+            if (legacy_err == ESP_OK) {
+                has_legacy_data = true;
+                ESP_LOGI(TAG, "Found legacy WiFi configuration");
+            }
+
+            // Read TCP config
+            required_size = sizeof(legacy_tcp);
+            legacy_err = nvs_get_blob(legacy_nvs_handle, "tcp", &legacy_tcp, &required_size);
+            if (legacy_err == ESP_OK) {
+                has_legacy_data = true;
+                ESP_LOGI(TAG, "Found legacy TCP configuration");
+            }
+
+            // Read I2S config
+            required_size = sizeof(legacy_i2s);
+            legacy_err = nvs_get_blob(legacy_nvs_handle, "i2s", &legacy_i2s, &required_size);
+            if (legacy_err == ESP_OK) {
+                has_legacy_data = true;
+                ESP_LOGI(TAG, "Found legacy I2S configuration");
+            }
+
+            // Read other configs as needed...
+
+            nvs_close(legacy_nvs_handle);
+
+            if (has_legacy_data) {
+                // Create a legacy config structure to pass to conversion function
+                struct legacy_config_data {
+                    wifi_config_data_t wifi;
+                    tcp_config_data_t tcp;
+                    i2s_config_data_t i2s;
+                    buffer_config_data_t buffer;
+                    task_config_data_t tasks;
+                    error_config_data_t error;
+                    debug_config_data_t debug;
+                    auth_config_data_t auth;
+                    streaming_config_data_t streaming;
+                } legacy_data;
+
+                memcpy(&legacy_data.wifi, &legacy_wifi, sizeof(wifi_config_data_t));
+                memcpy(&legacy_data.tcp, &legacy_tcp, sizeof(tcp_config_data_t));
+                memcpy(&legacy_data.i2s, &legacy_i2s, sizeof(i2s_config_data_t));
+                memcpy(&legacy_data.buffer, &legacy_buffer, sizeof(buffer_config_data_t));
+                memcpy(&legacy_data.tasks, &legacy_tasks, sizeof(task_config_data_t));
+                memcpy(&legacy_data.error, &legacy_error, sizeof(error_config_data_t));
+                memcpy(&legacy_data.debug, &legacy_debug, sizeof(debug_config_data_t));
+                memcpy(&legacy_data.auth, &legacy_auth, sizeof(auth_config_data_t));
+                memcpy(&legacy_data.streaming, &legacy_streaming, sizeof(streaming_config_data_t));
+
+                if (config_schema_convert_legacy(&legacy_data, &legacy_config)) {
+                    memcpy(&current_config, &legacy_config, sizeof(unified_config_t));
+                    memcpy(&saved_config, &current_config, sizeof(unified_config_t));
+                    has_unsaved_changes = true;
+
+                    ESP_LOGI(TAG, "Legacy configuration migrated successfully");
+                    return true;
+                } else {
+                    ESP_LOGW(TAG, "Legacy configuration migration failed");
+                }
+            } else {
+                ESP_LOGW(TAG, "No legacy configuration data found");
+            }
+        } else {
+            ESP_LOGW(TAG, "No legacy configuration namespace found");
         }
 
         return false;
