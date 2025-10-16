@@ -10,10 +10,12 @@
 #include "modules/i2s_handler.h"
 #include "modules/network_manager.h"
 #include "modules/tcp_streamer.h"
+#include "modules/udp_streamer.h"
 #include "modules/buffer_manager.h"
-#include "modules/config_manager.h"
-#include "modules/web_server.h"
+#include "modules/config_manager_v2.h"
+#include "modules/web_server_v2.h"
 #include "modules/captive_portal.h"
+#include "modules/performance_monitor.h"
 
 static const char *TAG = "MAIN";
 
@@ -29,6 +31,7 @@ static uint32_t tcp_sender_last_feed = 0;
 // Error counters
 static uint32_t consecutive_i2s_failures = 0;
 static uint32_t consecutive_tcp_failures = 0;
+static uint32_t consecutive_udp_failures = 0;
 static uint32_t buffer_overflow_count = 0;
 static uint32_t last_overflow_time = 0;
 
@@ -132,11 +135,11 @@ static void i2s_reader_task(void *arg)
 }
 
 /**
- * TCP Sender Task with Exponential Backoff
+ * Network Sender Task with TCP/UDP Support and Exponential Backoff
  */
-static void tcp_sender_task(void *arg)
+static void network_sender_task(void *arg)
 {
-    ESP_LOGI(TAG, "TCP Sender task started");
+    ESP_LOGI(TAG, "Network Sender task started (TCP/UDP)");
 
     // ✅ CHANGED: Use int16_t buffer for native 16-bit samples (50% bandwidth savings)
     const size_t send_samples = TCP_SEND_SAMPLES;
@@ -149,7 +152,6 @@ static void tcp_sender_task(void *arg)
 
     uint32_t reconnect_backoff_ms = RECONNECT_BACKOFF_MS;
     uint32_t reconnect_attempts = 0;
-    uint32_t total_reconnect_attempts = 0; // ✅ ADD: Track total failures
 
     while (1)
     {
@@ -177,58 +179,100 @@ static void tcp_sender_task(void *arg)
 
         if (samples_read > 0)
         {
-            // ✅ CHANGED: Send 16-bit samples directly (tcp_streamer handles int16_t now)
-            if (!tcp_streamer_send_audio_16(send_buffer, samples_read))
+            bool send_success = false;
+
+// Send data based on configured streaming protocol
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_TCP
+            send_success = tcp_streamer_send_audio_16(send_buffer, samples_read);
+#elif STREAMING_PROTOCOL == STREAMING_PROTOCOL_UDP
+            send_success = udp_streamer_send_audio_16(send_buffer, samples_read);
+#elif STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+            // Send to both TCP and UDP
+            bool tcp_success = tcp_streamer_send_audio_16(send_buffer, samples_read);
+            bool udp_success = udp_streamer_send_audio_16(send_buffer, samples_read);
+            send_success = tcp_success || udp_success; // Consider success if either works
+#endif
+
+            if (!send_success)
             {
-                consecutive_tcp_failures++;
-                ESP_LOGE(TAG, "TCP send failed (attempt %lu/%d)",
-                         reconnect_attempts, MAX_RECONNECT_ATTEMPTS);
-
-                ESP_LOGI(TAG, "Waiting %lums before reconnect...", reconnect_backoff_ms);
-                vTaskDelay(pdMS_TO_TICKS(reconnect_backoff_ms));
-
-                if (tcp_streamer_reconnect())
+// Handle connection failures based on active protocol(s)
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_TCP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+                if (!tcp_streamer_is_connected())
                 {
-                    ESP_LOGI(TAG, "TCP reconnected successfully");
-                    consecutive_tcp_failures = 0;
-                    reconnect_backoff_ms = RECONNECT_BACKOFF_MS;
-                    reconnect_attempts = 0;
-                    total_reconnect_attempts = 0; // ✅ ADD: Reset total counter on success
-                }
-                else
-                {
-                    reconnect_attempts++;
-                    total_reconnect_attempts++; // ✅ ADD: Increment total counter
+                    consecutive_tcp_failures++;
+                    ESP_LOGE(TAG, "TCP send failed (attempt %lu/%d)",
+                             reconnect_attempts, MAX_RECONNECT_ATTEMPTS);
 
-                    reconnect_backoff_ms *= 2;
-                    if (reconnect_backoff_ms > MAX_RECONNECT_BACKOFF_MS)
-                    {
-                        reconnect_backoff_ms = MAX_RECONNECT_BACKOFF_MS;
-                    }
+                    ESP_LOGI(TAG, "Waiting %lums before TCP reconnect...", reconnect_backoff_ms);
+                    vTaskDelay(pdMS_TO_TICKS(reconnect_backoff_ms));
 
-                    // ✅ ADD: TCP pause mechanism after 100 total failures
-                    if (total_reconnect_attempts >= 100)
+                    if (tcp_streamer_reconnect())
                     {
-                        ESP_LOGE(TAG, "100 reconnection failures reached, pausing streaming for 5 minutes");
-                        vTaskDelay(pdMS_TO_TICKS(300000));           // 5 minutes pause
-                        total_reconnect_attempts = 0;                // Reset counter after pause
-                        reconnect_backoff_ms = RECONNECT_BACKOFF_MS; // Reset backoff
-                        ESP_LOGI(TAG, "Resuming streaming attempts...");
+                        ESP_LOGI(TAG, "TCP reconnected successfully");
+                        consecutive_tcp_failures = 0;
                     }
+                    else
+                    {
+                        reconnect_attempts++;
+                        reconnect_backoff_ms *= 2;
+                        if (reconnect_backoff_ms > MAX_RECONNECT_BACKOFF_MS)
+                        {
+                            reconnect_backoff_ms = MAX_RECONNECT_BACKOFF_MS;
+                        }
 
 #if ENABLE_AUTO_REBOOT
-                    if (reconnect_attempts >= MAX_RECONNECT_ATTEMPTS)
-                    {
-                        ESP_LOGE(TAG, "Max reconnect attempts reached, rebooting...");
-                        vTaskDelay(pdMS_TO_TICKS(1000));
-                        esp_restart();
-                    }
+                        if (reconnect_attempts >= MAX_RECONNECT_ATTEMPTS)
+                        {
+                            ESP_LOGE(TAG, "Max TCP reconnect attempts reached, rebooting...");
+                            vTaskDelay(pdMS_TO_TICKS(1000));
+                            esp_restart();
+                        }
 #endif
+                    }
                 }
+#endif
+
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_UDP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+                if (!udp_streamer_is_connected())
+                {
+                    consecutive_udp_failures++;
+                    ESP_LOGE(TAG, "UDP send failed (attempt %lu/%d)",
+                             reconnect_attempts, MAX_RECONNECT_ATTEMPTS);
+
+                    ESP_LOGI(TAG, "Waiting %lums before UDP reconnect...", reconnect_backoff_ms);
+                    vTaskDelay(pdMS_TO_TICKS(reconnect_backoff_ms));
+
+                    if (udp_streamer_reconnect())
+                    {
+                        ESP_LOGI(TAG, "UDP reconnected successfully");
+                        consecutive_udp_failures = 0;
+                    }
+                    else
+                    {
+                        reconnect_attempts++;
+                        reconnect_backoff_ms *= 2;
+                        if (reconnect_backoff_ms > MAX_RECONNECT_BACKOFF_MS)
+                        {
+                            reconnect_backoff_ms = MAX_RECONNECT_BACKOFF_MS;
+                        }
+
+#if ENABLE_AUTO_REBOOT
+                        if (reconnect_attempts >= MAX_RECONNECT_ATTEMPTS)
+                        {
+                            ESP_LOGE(TAG, "Max UDP reconnect attempts reached, rebooting...");
+                            vTaskDelay(pdMS_TO_TICKS(1000));
+                            esp_restart();
+                        }
+#endif
+                    }
+                }
+#endif
             }
             else
             {
+                // Reset failure counters on successful send
                 consecutive_tcp_failures = 0;
+                consecutive_udp_failures = 0;
                 reconnect_backoff_ms = RECONNECT_BACKOFF_MS;
                 reconnect_attempts = 0;
                 tcp_sender_last_feed = xTaskGetTickCount();
@@ -274,12 +318,19 @@ static void watchdog_task(void *arg)
             ESP_LOGW(TAG, "WiFi lost, attempting reconnect...");
             network_manager_reconnect();
 
-            // Force TCP reconnect after WiFi recovery
+            // Force network reconnect after WiFi recovery
             vTaskDelay(pdMS_TO_TICKS(2000)); // Wait for WiFi to stabilize
             if (network_manager_is_connected())
             {
-                ESP_LOGI(TAG, "WiFi recovered, reconnecting TCP...");
+                ESP_LOGI(TAG, "WiFi recovered, reconnecting network streams...");
+
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_TCP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
                 tcp_streamer_reconnect();
+#endif
+
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_UDP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+                udp_streamer_reconnect();
+#endif
             }
         }
         else if (!wifi_connected)
@@ -316,11 +367,32 @@ static void watchdog_task(void *arg)
         // Log statistics every 10 seconds
         if (++log_counter >= WATCHDOG_LOG_INTERVAL_SEC)
         {
-            uint64_t bytes_sent;
-            uint32_t reconnects;
-            tcp_streamer_get_stats(&bytes_sent, &reconnects);
+            uint64_t tcp_bytes_sent = 0;
+            uint32_t tcp_reconnects = 0;
 
-            ESP_LOGI(TAG, "B:%llu R:%u OF:%lu", bytes_sent, reconnects, buffer_overflow_count);
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_TCP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+            tcp_streamer_get_stats(&tcp_bytes_sent, &tcp_reconnects);
+#endif
+
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_UDP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+            udp_streamer_get_stats(&udp_bytes_sent, &udp_packets_sent, &udp_lost);
+#endif
+
+// Log protocol-specific stats
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_TCP
+            ESP_LOGI(TAG, "TCP B:%llu R:%u OF:%lu", tcp_bytes_sent, tcp_reconnects, buffer_overflow_count);
+#elif STREAMING_PROTOCOL == STREAMING_PROTOCOL_UDP
+            uint64_t udp_bytes_sent = 0;
+            uint32_t udp_packets_sent = 0, udp_lost = 0;
+            udp_streamer_get_stats(&udp_bytes_sent, &udp_packets_sent, &udp_lost);
+            ESP_LOGI(TAG, "UDP B:%llu P:%u L:%u OF:%lu", udp_bytes_sent, udp_packets_sent, udp_lost, buffer_overflow_count);
+#elif STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+            uint64_t udp_bytes_sent = 0;
+            uint32_t udp_packets_sent = 0, udp_lost = 0;
+            udp_streamer_get_stats(&udp_bytes_sent, &udp_packets_sent, &udp_lost);
+            ESP_LOGI(TAG, "TCP B:%llu R:%u | UDP B:%llu P:%u L:%u OF:%lu",
+                     tcp_bytes_sent, tcp_reconnects, udp_bytes_sent, udp_packets_sent, udp_lost, buffer_overflow_count);
+#endif
 
             // Memory monitoring
             size_t free_heap = esp_get_free_heap_size();
@@ -417,6 +489,16 @@ static void watchdog_task(void *arg)
             ntp_counter = 0;
         }
 
+#if ADAPTIVE_BUFFERING_ENABLED
+        // Check adaptive buffering every ADAPTIVE_CHECK_INTERVAL_MS
+        static uint32_t adaptive_counter = 0;
+        if (++adaptive_counter >= (ADAPTIVE_CHECK_INTERVAL_MS / 1000))
+        {
+            buffer_manager_adaptive_check();
+            adaptive_counter = 0;
+        }
+#endif
+
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
@@ -447,8 +529,8 @@ static void create_tasks(void)
 
     esp_task_wdt_reset();
     result = xTaskCreatePinnedToCore(
-        tcp_sender_task,
-        "TCP_Sender",
+        network_sender_task,
+        "Network_Sender",
         TCP_SENDER_STACK_SIZE,
         NULL,
         TCP_SENDER_PRIORITY,
@@ -456,10 +538,10 @@ static void create_tasks(void)
         TCP_SENDER_CORE);
     if (result != pdPASS)
     {
-        ESP_LOGE(TAG, "CRITICAL: Failed to create TCP Sender task");
+        ESP_LOGE(TAG, "CRITICAL: Failed to create Network Sender task");
         esp_restart();
     }
-    ESP_LOGI(TAG, "TCP Sender task created");
+    ESP_LOGI(TAG, "Network Sender task created");
 
     esp_task_wdt_reset();
     result = xTaskCreatePinnedToCore(
@@ -486,9 +568,9 @@ static void start_captive_portal(bool with_timeout)
         ESP_LOGI(TAG, "Captive portal active. Connect to '%s' to configure.", CAPTIVE_PORTAL_SSID);
 
         // Initialize web server for configuration in AP mode
-        if (web_server_init())
+        if (web_server_v2_init())
         {
-            ESP_LOGI(TAG, "Web configuration available at http://192.168.4.1");
+            ESP_LOGI(TAG, "Web configuration v2 available at http://192.168.4.1");
         }
 
         // Wait for configuration
@@ -508,7 +590,7 @@ static void start_captive_portal(bool with_timeout)
         }
 
         captive_portal_stop();
-        web_server_deinit();
+        web_server_v2_deinit();
 
         if (!captive_portal_is_configured() && with_timeout)
         {
@@ -556,31 +638,31 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "NVS flash initialized successfully");
 
     esp_task_wdt_reset();
-    // Initialize configuration manager
-    ESP_LOGI(TAG, "Initializing configuration manager...");
-    if (!config_manager_init())
+    // Initialize configuration manager v2
+    ESP_LOGI(TAG, "Initializing configuration manager v2...");
+    if (!config_manager_v2_init())
     {
-        ESP_LOGE(TAG, "CRITICAL: Config manager init failed, rebooting...");
+        ESP_LOGE(TAG, "CRITICAL: Config manager v2 init failed, rebooting...");
         vTaskDelay(pdMS_TO_TICKS(5000));
         esp_restart();
     }
 
     // Load configuration from NVS (or defaults on first boot)
-    if (!config_manager_load())
+    if (!config_manager_v2_load())
     {
         ESP_LOGE(TAG, "CRITICAL: Failed to load configuration, rebooting...");
         vTaskDelay(pdMS_TO_TICKS(5000));
         esp_restart();
     }
 
-    if (config_manager_is_first_boot())
+    if (config_manager_v2_is_first_boot())
     {
         ESP_LOGI(TAG, "First boot detected - using default configuration");
-        config_manager_save(); // Save defaults to NVS
+        config_manager_v2_save(); // Save defaults to NVS
     }
 
     // Check if first boot and try captive portal
-    if (config_manager_is_first_boot() || !captive_portal_is_configured())
+    if (config_manager_v2_is_first_boot() || !captive_portal_is_configured())
     {
         start_captive_portal(true);
     }
@@ -604,22 +686,51 @@ extern "C" void app_main(void)
     network_manager_init_ntp();
 
     // Initialize web server
-    ESP_LOGI(TAG, "Initializing web server...");
-    if (!web_server_init())
+    ESP_LOGI(TAG, "Initializing web server v2...");
+    if (!web_server_v2_init())
     {
-        ESP_LOGW(TAG, "Web server init failed, continuing without web UI");
+        ESP_LOGW(TAG, "Web server v2 init failed, continuing without web UI");
     }
     else
     {
-        ESP_LOGI(TAG, "Web UI available at http://audiostreamer.local or device IP");
+        ESP_LOGI(TAG, "Web UI v2 available at http://audiostreamer.local or device IP");
     }
 
     ESP_LOGI(TAG, "Initializing ring buffer...");
-    if (!buffer_manager_init(RING_BUFFER_SIZE))
+    size_t buffer_size = RING_BUFFER_SIZE;
+
+#if ADAPTIVE_BUFFERING_ENABLED
+    // Use adaptive default size if adaptive buffering is enabled
+    buffer_size = ADAPTIVE_BUFFER_DEFAULT_SIZE;
+#endif
+
+    if (!buffer_manager_init(buffer_size))
     {
         ESP_LOGE(TAG, "CRITICAL: Buffer init failed, rebooting...");
         vTaskDelay(pdMS_TO_TICKS(5000));
         esp_restart();
+    }
+
+#if ADAPTIVE_BUFFERING_ENABLED
+    // Initialize adaptive buffering system
+    if (!buffer_manager_adaptive_init())
+    {
+        ESP_LOGW(TAG, "Adaptive buffering initialization failed, using static buffer");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Adaptive buffering enabled with %d KB initial size", buffer_size / 1024);
+    }
+#endif
+
+    // Initialize performance monitoring system
+    if (!performance_monitor_init())
+    {
+        ESP_LOGW(TAG, "Performance monitoring initialization failed");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Performance monitoring initialized");
     }
 
     esp_task_wdt_reset();
@@ -632,11 +743,32 @@ extern "C" void app_main(void)
     }
 
     esp_task_wdt_reset();
-    ESP_LOGI(TAG, "Connecting to TCP server...");
+    ESP_LOGI(TAG, "Connecting to streaming servers...");
+
+// Initialize TCP streamer if configured
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_TCP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
     if (!tcp_streamer_init())
     {
         ESP_LOGW(TAG, "Initial TCP connection failed, will retry in background");
     }
+#endif
+
+// Initialize UDP streamer if configured
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_UDP || STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+    if (!udp_streamer_init())
+    {
+        ESP_LOGW(TAG, "Initial UDP initialization failed, will retry in background");
+    }
+#endif
+
+// Log the active streaming protocol
+#if STREAMING_PROTOCOL == STREAMING_PROTOCOL_TCP
+    ESP_LOGI(TAG, "TCP streaming enabled");
+#elif STREAMING_PROTOCOL == STREAMING_PROTOCOL_UDP
+    ESP_LOGI(TAG, "UDP streaming enabled");
+#elif STREAMING_PROTOCOL == STREAMING_PROTOCOL_BOTH
+    ESP_LOGI(TAG, "TCP and UDP streaming enabled");
+#endif
 
     // Initialize watchdog feed timestamps
     i2s_reader_last_feed = xTaskGetTickCount();

@@ -104,8 +104,24 @@ bool network_manager_init(void) {
         }
     }
 
-    // Initialize WiFi
+    // Initialize WiFi with optimized configuration
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+
+#if NETWORK_OPTIMIZATION_ENABLED
+    // Apply network stack optimizations
+    cfg.dynamic_tx_buf_num = WIFI_DYNAMIC_TX_BUF_NUM;
+    cfg.static_tx_buf_num = WIFI_STATIC_TX_BUF_NUM;
+    cfg.dynamic_rx_buf_num = WIFI_DYNAMIC_RX_BUF_NUM;
+    cfg.static_rx_buf_num = WIFI_STATIC_RX_BUF_NUM;
+    cfg.rx_mgmt_buf_num = WIFI_RX_MGMT_BUF_NUM;
+    cfg.rx_ba_win = WIFI_RX_BA_WIN;
+
+    ESP_LOGI(TAG, "WiFi optimization: TX buffers %d/%d, RX buffers %d/%d, MGMT %d, BA_WIN %d",
+             cfg.static_tx_buf_num, cfg.dynamic_tx_buf_num,
+             cfg.static_rx_buf_num, cfg.dynamic_rx_buf_num,
+             cfg.rx_mgmt_buf_num, cfg.rx_ba_win);
+#endif
+
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
     // Register event handlers

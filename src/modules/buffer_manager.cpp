@@ -4,6 +4,7 @@
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include <string.h>
 
 static const char *TAG = "BUFFER_MANAGER";
@@ -18,6 +19,23 @@ static size_t write_index = 0;
 static size_t available_samples = 0;
 static SemaphoreHandle_t buffer_mutex = NULL;
 static bool overflow_occurred = false;
+
+#if ADAPTIVE_BUFFERING_ENABLED
+// Adaptive buffering state
+static bool adaptive_enabled = true;
+static uint32_t resize_count = 0;
+static uint32_t last_resize_time = 0;
+static uint32_t last_check_time = 0;
+static uint8_t usage_history[12]; // 1 minute of history (12 samples × 5 seconds)
+static uint8_t history_index = 0;
+static bool resize_in_progress = false;
+
+// Forward declarations for adaptive functions
+static bool buffer_manager_resize_internal(size_t new_size_bytes);
+static int8_t calculate_usage_trend(void);
+static bool should_resize_up(uint8_t current_usage, int8_t trend);
+static bool should_resize_down(uint8_t current_usage, int8_t trend);
+#endif
 
 bool buffer_manager_init(size_t size_bytes)
 {
@@ -372,3 +390,317 @@ void buffer_manager_deinit(void)
 
     ESP_LOGI(TAG, "Buffer manager deinitialized");
 }
+
+#if ADAPTIVE_BUFFERING_ENABLED
+bool buffer_manager_adaptive_init(void)
+{
+    ESP_LOGI(TAG, "Initializing adaptive buffering system");
+
+    // Initialize usage history
+    memset(usage_history, 0, sizeof(usage_history));
+    history_index = 0;
+    resize_count = 0;
+    last_resize_time = 0;
+    last_check_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    resize_in_progress = false;
+
+    ESP_LOGI(TAG, "Adaptive buffering initialized");
+    return true;
+}
+
+void buffer_manager_adaptive_check(void)
+{
+    if (!adaptive_enabled || resize_in_progress || ring_buffer == NULL)
+    {
+        return;
+    }
+
+    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+    // Check if enough time has passed since last check
+    if (current_time - last_check_time < ADAPTIVE_CHECK_INTERVAL_MS)
+    {
+        return;
+    }
+
+    last_check_time = current_time;
+
+    // Get current buffer usage
+    uint8_t current_usage = buffer_manager_usage_percent();
+
+    // Update usage history
+    usage_history[history_index] = current_usage;
+    history_index = (history_index + 1) % 12;
+
+    // Calculate usage trend
+    int8_t trend = calculate_usage_trend();
+
+    // Check if enough time has passed since last resize
+    if (current_time - last_resize_time < ADAPTIVE_RESIZE_DELAY_MS)
+    {
+        return;
+    }
+
+    // Determine if resize is needed
+    size_t current_size = buffer_size_samples * sizeof(int16_t);
+    size_t new_size = current_size;
+
+    if (should_resize_up(current_usage, trend))
+    {
+        // Double the buffer size, but don't exceed maximum
+        new_size = current_size * 2;
+        if (new_size > ADAPTIVE_BUFFER_MAX_SIZE)
+        {
+            new_size = ADAPTIVE_BUFFER_MAX_SIZE;
+        }
+
+        if (new_size != current_size)
+        {
+            ESP_LOGI(TAG, "Adaptive resize UP: %d KB → %d KB (usage: %d%%, trend: %d)",
+                     current_size / 1024, new_size / 1024, current_usage, trend);
+
+            if (buffer_manager_resize_internal(new_size))
+            {
+                resize_count++;
+                last_resize_time = current_time;
+            }
+        }
+    }
+    else if (should_resize_down(current_usage, trend))
+    {
+        // Halve the buffer size, but don't go below minimum
+        new_size = current_size / 2;
+        if (new_size < ADAPTIVE_BUFFER_MIN_SIZE)
+        {
+            new_size = ADAPTIVE_BUFFER_MIN_SIZE;
+        }
+
+        if (new_size != current_size)
+        {
+            ESP_LOGI(TAG, "Adaptive resize DOWN: %d KB → %d KB (usage: %d%%, trend: %d)",
+                     current_size / 1024, new_size / 1024, current_usage, trend);
+
+            if (buffer_manager_resize_internal(new_size))
+            {
+                resize_count++;
+                last_resize_time = current_time;
+            }
+        }
+    }
+}
+
+void buffer_manager_adaptive_get_stats(size_t *current_size, uint32_t *resize_cnt,
+                                     uint32_t *last_resize_time_ms)
+{
+    if (current_size)
+        *current_size = buffer_size_samples * sizeof(int16_t);
+    if (resize_cnt)
+        *resize_cnt = resize_count;
+    if (last_resize_time_ms)
+        *last_resize_time_ms = last_resize_time;
+}
+
+bool buffer_manager_adaptive_set_size(size_t new_size_bytes)
+{
+    if (new_size_bytes < ADAPTIVE_BUFFER_MIN_SIZE || new_size_bytes > ADAPTIVE_BUFFER_MAX_SIZE)
+    {
+        ESP_LOGE(TAG, "Invalid adaptive buffer size: %d bytes (min: %d, max: %d)",
+                 new_size_bytes, ADAPTIVE_BUFFER_MIN_SIZE, ADAPTIVE_BUFFER_MAX_SIZE);
+        return false;
+    }
+
+    return buffer_manager_resize_internal(new_size_bytes);
+}
+
+void buffer_manager_adaptive_set_enabled(bool enabled)
+{
+    adaptive_enabled = enabled;
+    ESP_LOGI(TAG, "Adaptive buffering %s", enabled ? "enabled" : "disabled");
+}
+
+bool buffer_manager_adaptive_is_enabled(void)
+{
+    return adaptive_enabled;
+}
+
+// Static helper functions
+static bool buffer_manager_resize_internal(size_t new_size_bytes)
+{
+    if (resize_in_progress)
+    {
+        ESP_LOGW(TAG, "Resize already in progress");
+        return false;
+    }
+
+    resize_in_progress = true;
+
+    if (xSemaphoreTake(buffer_mutex, pdMS_TO_TICKS(10000)) != pdTRUE)
+    {
+        ESP_LOGE(TAG, "Failed to acquire mutex for resize");
+        resize_in_progress = false;
+        return false;
+    }
+
+    // Allocate new buffer
+    int16_t *new_buffer = NULL;
+
+    // Try PSRAM first
+    new_buffer = (int16_t *)heap_caps_malloc(new_size_bytes, MALLOC_CAP_SPIRAM);
+    if (new_buffer == NULL)
+    {
+        // Fall back to internal SRAM
+        new_buffer = (int16_t *)malloc(new_size_bytes);
+        if (new_buffer == NULL)
+        {
+            ESP_LOGE(TAG, "Failed to allocate new buffer for resize");
+            xSemaphoreGive(buffer_mutex);
+            resize_in_progress = false;
+            return false;
+        }
+        ESP_LOGI(TAG, "New buffer allocated in internal SRAM");
+    }
+    else
+    {
+        ESP_LOGI(TAG, "New buffer allocated in PSRAM");
+    }
+
+    size_t new_size_samples = new_size_bytes / sizeof(int16_t);
+    size_t samples_to_copy = available_samples;
+    size_t samples_lost = 0;
+
+    if (samples_to_copy > new_size_samples)
+    {
+        // New buffer is smaller, we'll lose some data
+        samples_lost = samples_to_copy - new_size_samples;
+        samples_to_copy = new_size_samples;
+
+        // Discard oldest samples (from read position)
+        read_index = (read_index + samples_lost) % buffer_size_samples;
+        available_samples = samples_to_copy;
+
+        ESP_LOGW(TAG, "Lost %d samples due to buffer shrinkage", samples_lost);
+    }
+
+    // Copy data to new buffer
+    if (samples_to_copy > 0)
+    {
+        size_t chunk1 = samples_to_copy;
+        if (read_index + samples_to_copy > buffer_size_samples)
+        {
+            chunk1 = buffer_size_samples - read_index;
+        }
+
+        // Copy first chunk
+        memcpy(new_buffer, &ring_buffer[read_index], chunk1 * sizeof(int16_t));
+
+        // Copy second chunk if wrapping
+        if (chunk1 < samples_to_copy)
+        {
+            size_t chunk2 = samples_to_copy - chunk1;
+            memcpy(&new_buffer[chunk1], &ring_buffer[0], chunk2 * sizeof(int16_t));
+        }
+    }
+
+    // Swap buffers
+    int16_t *old_buffer = ring_buffer;
+    ring_buffer = new_buffer;
+    buffer_size_samples = new_size_samples;
+    read_index = 0;
+    write_index = samples_to_copy;
+
+    xSemaphoreGive(buffer_mutex);
+
+    // Free old buffer
+    if (old_buffer != NULL)
+    {
+        free(old_buffer);
+    }
+
+    ESP_LOGI(TAG, "Buffer resize completed: %d samples (%d bytes)",
+             buffer_size_samples, new_size_bytes);
+
+    resize_in_progress = false;
+    return true;
+}
+
+static int8_t calculate_usage_trend(void)
+{
+    // Calculate simple trend: +1 = increasing, 0 = stable, -1 = decreasing
+    uint32_t sum_first = 0, sum_last = 0;
+    uint8_t count = 6; // Use half the history for trend calculation
+
+    for (uint8_t i = 0; i < count; i++)
+    {
+        uint8_t index = (history_index + i) % 12;
+        if (i < count / 2)
+        {
+            sum_first += usage_history[index];
+        }
+        else
+        {
+            sum_last += usage_history[index];
+        }
+    }
+
+    uint8_t avg_first = sum_first / (count / 2);
+    uint8_t avg_last = sum_last / (count / 2);
+
+    if (avg_last > avg_first + 10)
+        return 1;  // Increasing
+    else if (avg_last < avg_first - 10)
+        return -1; // Decreasing
+    else
+        return 0;  // Stable
+}
+
+static bool should_resize_up(uint8_t current_usage, int8_t trend)
+{
+    size_t current_size = buffer_size_samples * sizeof(int16_t);
+
+    // Don't resize up if already at maximum
+    if (current_size >= ADAPTIVE_BUFFER_MAX_SIZE)
+    {
+        return false;
+    }
+
+    // Resize up if usage is high
+    if (current_usage > ADAPTIVE_THRESHOLD_HIGH)
+    {
+        return true;
+    }
+
+    // Resize up if usage is moderate and increasing
+    if (current_usage > 60 && trend > 0)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+static bool should_resize_down(uint8_t current_usage, int8_t trend)
+{
+    size_t current_size = buffer_size_samples * sizeof(int16_t);
+
+    // Don't resize down if already at minimum
+    if (current_size <= ADAPTIVE_BUFFER_MIN_SIZE)
+    {
+        return false;
+    }
+
+    // Resize down if usage is consistently low
+    if (current_usage < ADAPTIVE_THRESHOLD_LOW && trend < 0)
+    {
+        return true;
+    }
+
+    // Resize down if usage is very low
+    if (current_usage < 15)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+#endif // ADAPTIVE_BUFFERING_ENABLED

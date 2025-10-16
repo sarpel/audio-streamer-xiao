@@ -24,9 +24,9 @@ bool i2s_handler_init(void)
         return false;
     }
 
-    // Clock configuration: 16 kHz, no MCLK
+    // Clock configuration: 16 kHz (fixed), no MCLK
     i2s_std_clk_config_t clk_cfg = {
-        .sample_rate_hz = I2S_SAMPLE_RATE,
+        .sample_rate_hz = SAMPLE_RATE,
         .clk_src = I2S_CLK_SRC_DEFAULT,
         .ext_clk_freq_hz = 0,
         .mclk_multiple = (i2s_mclk_multiple_t)0, // Disable MCLK
@@ -88,7 +88,7 @@ bool i2s_handler_init(void)
 
     ESP_LOGI(TAG, "I2S initialized successfully (Philips standard, 32-bit slot, 24-bit data, mono-left)");
     ESP_LOGI(TAG, "Sample rate: %d Hz, BCLK: GPIO%d, WS: GPIO%d, SD: GPIO%d",
-             I2S_SAMPLE_RATE, I2S_BCLK_GPIO, I2S_WS_GPIO, I2S_SD_GPIO);
+             SAMPLE_RATE, I2S_BCLK_GPIO, I2S_WS_GPIO, I2S_SD_GPIO);
 
     return true;
 }

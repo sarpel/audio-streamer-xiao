@@ -98,4 +98,38 @@ void buffer_manager_reset(void);
  */
 void buffer_manager_deinit(void);
 
+#if ADAPTIVE_BUFFERING_ENABLED
+/**
+ * Initialize adaptive buffering system
+ */
+bool buffer_manager_adaptive_init(void);
+
+/**
+ * Check and adjust buffer size based on usage patterns
+ */
+void buffer_manager_adaptive_check(void);
+
+/**
+ * Get current adaptive buffer statistics
+ */
+void buffer_manager_adaptive_get_stats(size_t *current_size, uint32_t *resize_count,
+                                     uint32_t *last_resize_time_ms);
+
+/**
+ * Set adaptive buffer size manually
+ */
+bool buffer_manager_adaptive_set_size(size_t new_size_bytes);
+
+/**
+ * Enable/disable adaptive buffering
+ */
+void buffer_manager_adaptive_set_enabled(bool enabled);
+
+/**
+ * Check if adaptive buffering is enabled
+ */
+bool buffer_manager_adaptive_is_enabled(void);
+
+#endif // ADAPTIVE_BUFFERING_ENABLED
+
 #endif // BUFFER_MANAGER_H

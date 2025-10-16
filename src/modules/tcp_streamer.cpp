@@ -33,17 +33,22 @@ static bool tcp_connect(void)
         return false;
     }
 
-    // Set socket options
+    // Set socket options with optimized values
+#if TCP_KEEPALIVE_ENABLED
     int keepalive = 1;
-    int keepidle = 5;
-    int keepinterval = 5;
-    int keepcount = 3;
+    int keepidle = TCP_KEEPALIVE_IDLE_SEC;
+    int keepinterval = TCP_KEEPALIVE_INTERVAL_SEC;
+    int keepcount = TCP_KEEPALIVE_COUNT;
 
     setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
     setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
     setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepinterval, sizeof(keepinterval));
     setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepcount, sizeof(keepcount));
+    ESP_LOGI(TAG, "TCP keepalive enabled: idle=%ds, interval=%ds, count=%d",
+             keepidle, keepinterval, keepcount);
+#endif
 
+#if TCP_NODELAY_ENABLED
     // Disable Nagle algorithm for low latency
     int nodelay = 1;
     if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay)) != 0)
@@ -54,6 +59,31 @@ static bool tcp_connect(void)
     {
         ESP_LOGI(TAG, "TCP_NODELAY enabled for low latency");
     }
+#endif
+
+    // Set buffer sizes for better performance
+#if NETWORK_OPTIMIZATION_ENABLED
+    int tx_buf_size = TCP_TX_BUFFER_SIZE;
+    int rx_buf_size = TCP_RX_BUFFER_SIZE;
+
+    if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &tx_buf_size, sizeof(tx_buf_size)) != 0)
+    {
+        ESP_LOGW(TAG, "Failed to set TCP TX buffer size: errno %d", errno);
+    }
+    else
+    {
+        ESP_LOGI(TAG, "TCP TX buffer set to %d bytes", tx_buf_size);
+    }
+
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rx_buf_size, sizeof(rx_buf_size)) != 0)
+    {
+        ESP_LOGW(TAG, "Failed to set TCP RX buffer size: errno %d", errno);
+    }
+    else
+    {
+        ESP_LOGI(TAG, "TCP RX buffer set to %d bytes", rx_buf_size);
+    }
+#endif
 
     // Set send timeout
     struct timeval timeout;

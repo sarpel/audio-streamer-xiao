@@ -1,5 +1,6 @@
 #include "captive_portal.h"
-#include "config_manager.h"
+#include "config_manager_v2.h"
+#include "config_schema.h"
 #include "../config.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -189,13 +190,14 @@ void captive_portal_stop(void)
 bool captive_portal_is_configured(void)
 {
     // First boot means definitely not configured via captive portal
-    if (config_manager_is_first_boot())
+    if (config_manager_v2_is_first_boot())
     {
         return false;
     }
 
-    wifi_config_data_t wifi;
-    if (!config_manager_get_wifi(&wifi))
+    // Get unified configuration
+    unified_config_t config;
+    if (!config_manager_v2_get_config(&config))
     {
         return false;
     }
@@ -204,9 +206,9 @@ bool captive_portal_is_configured(void)
     // Consider configured if:
     // 1. SSID has actual content (not empty)
     // 2. SSID is not a default placeholder like "CHANGE_ME" or "your_wifi"
-    if (strlen(wifi.ssid) == 0 ||
-        strcmp(wifi.ssid, "CHANGE_ME") == 0 ||
-        strcmp(wifi.ssid, "your_wifi") == 0)
+    if (strlen(config.wifi_ssid) == 0 ||
+        strcmp(config.wifi_ssid, "CHANGE_ME") == 0 ||
+        strcmp(config.wifi_ssid, "your_wifi") == 0)
     {
         return false;
     }
