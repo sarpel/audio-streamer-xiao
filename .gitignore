@@ -15,7 +15,6 @@ managed_components/
 # IDE
 .vscode/
 .clangd
-
-# Documentation
 claudedocs/
+# Documentation
 kimi.ps1
